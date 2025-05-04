@@ -1,29 +1,74 @@
-<!doctype html><html lang="it"><head>
-    <meta charset="utf-8"><title>Generatore Report Perizia</title>
-    <style>
-    body{font-family:sans-serif;max-width:600px;margin:40px auto}
-    #spin{display:none;text-align:center;font-size:1.1em}
-    </style></head><body>
-    <h2>Generatore Report DOCX</h2>
+<!doctype html>
+<html lang="it">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generatore Report Perizia</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="container">
+    <h2>Il tuo perito assicurativo virtuale</h2>
     <form id="frm">
-    <input type="file" name="files" multiple required><br><br>
-    <textarea name="notes" rows="4" style="width:100%"
-      placeholder="Note aggiuntive (opzionale)"></textarea><br><br>
-    <button>Crea report</button></form>
-    <div id="spin">⏳ Generazione in corso…</div>
-    <script>
-        const f=document.getElementById('frm'), s=document.getElementById('spin');
-        f.addEventListener('submit',async e=>{
-          e.preventDefault(); s.style.display='block';
-          try{
-            const r=await fetch('/generate',{method:'POST',body:new FormData(f)});
-            s.style.display='none';
-            if(r.status===413){alert('File troppo grande o troppi allegati');return;}
-            if(!r.ok){alert(await r.text());return;}
-            const blob=await r.blob();const url=URL.createObjectURL(blob);
-            const a=document.createElement('a');a.href=url;a.download='report.docx';a.click();
-            URL.revokeObjectURL(url);
-          }catch(err){s.style.display='none';alert('Errore di rete: '+err);}
+      <div class="file-input-wrapper">
+        <input type="file" name="files" multiple required class="file-input">
+      </div>
+      
+      <div class="textarea-wrapper">
+        <textarea 
+          name="notes" 
+          rows="4" 
+          placeholder="Note aggiuntive (opzionale)"
+          aria-label="Note aggiuntive"></textarea>
+      </div>
+      
+      <button type="submit">Crea Report</button>
+    </form>
+    <div id="spin">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script>
+    const f = document.getElementById('frm'), s = document.getElementById('spin');
+    
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      s.style.display = 'block';
+      
+      try {
+        const r = await fetch('/generate', { 
+          method: 'POST', 
+          body: new FormData(f) 
         });
-        </script>
-        </body></html>    
+        
+        s.style.display = 'none';
+        
+        if (r.status === 413) { 
+          alert('File troppo grande o troppi allegati'); 
+          return; 
+        }
+        
+        if (!r.ok) { 
+          alert(await r.text()); 
+          return; 
+        }
+        
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'report.docx';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) { 
+        s.style.display = 'none';
+        alert('Errore di rete: ' + err);
+      }
+    });
+  </script>
+</body>
+
+</html>

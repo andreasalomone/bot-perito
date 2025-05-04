@@ -1,0 +1,131 @@
+/* Apple-inspired minimalistic design */
+:root {
+  --font-sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --primary-color: #007AFF;
+  --background-color: #FFFFFF;
+  --text-color: #1D1D1F;
+  --border-color: #D2D2D7;
+  --hover-color: #0071EB;
+  --error-color: #FF3B30;
+}
+
+body {
+  font-family: var(--font-sf);
+  background-color: var(--background-color);
+  color: var(--text-color);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  padding: 2rem;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+h2 {
+  font-size: 2.5rem;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  color: var(--text-color);
+}
+
+.file-input-wrapper {
+  margin-bottom: 1.5rem;
+}
+
+.file-input {
+  width: 100%;
+  padding: 1rem;
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.file-input:hover {
+  border-color: var(--primary-color);
+}
+
+textarea {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-family: var(--font-sf);
+  font-size: 1rem;
+  resize: vertical;
+  transition: all 0.3s ease;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+}
+
+button {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  background-color: var(--hover-color);
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+#spin {
+  display: none;
+  text-align: center;
+  margin: 2rem auto;
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+@keyframes spinner {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top: 3px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spinner 0.8s linear infinite;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding: 1.5rem;
+  }
+  
+  h2 {
+    font-size: 2rem;
+  }
+  
+  button {
+    width: 100%;
+  }
+} 
