@@ -29,7 +29,6 @@ client = OpenAI(
        retry=lambda exc: isinstance(exc, OpenAIError)
                          and exc.status in {429, 500, 502, 503, 504})
 async def call_llm(prompt: str) -> str:
-    print("DEBUG key prefix:", settings.openrouter_api_key[:12])
 
     def _sync_call() -> str:
         rsp = client.chat.completions.create(
@@ -84,30 +83,46 @@ def build_prompt(template_excerpt: str,
     # --- eventuali immagini -------------------------------------------------
     img_block = ""
     if images and settings.allow_vision:
-        img_block = "\n\nIMMAGINI_BASE64 (usa se utili):\n" + "\n".join(images)
+        img_block = "\n\nFOTO_DANNI_BASE64:\n" + "\n".join(images)
 
     # --- prompt finale ------------------------------------------------------
     return f"""
 Sei un perito assicurativo italiano della Salomone e Associati. Analizza i documenti e restituisci
 ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 
-## Definizione chiavi
-- "client"            : Ragione sociale del cliente assicurato (tag {{CLIENT}})
-- "client_address1"   : Indirizzo (prima riga)           ({{CLIENTADDRESS1}})
-- "client_address2"   : CAP + Città (seconda riga)       ({{CLIENTADDRESS2}})
-- "date"              : Data report in formato GG/MM/AAAA ({{DATE}})
-- "vs_rif"            : *Vostro Riferimento* – codice sinistro fornito dal cliente ({{VSRIF}})
-- "rif_broker"        : Riferimento del broker           ({{RIFBROKER}})
-- "polizza"           : Numero di polizza assicurativa   ({{POLIZZA}})
-- "ns_rif"            : *Nostro Riferimento* – ID interno del perito ({{NSRIF}})
-- "subject"           : Oggetto sintetico della perizia  ({{SUBJECT}})
-- "body"              : Testo della perizia a partire da "1 – DINAMICA DEGLI EVENTI"
+## Definizione chiavi
+| chiave JSON       | tag DOCX                | contenuto richiesto                                   |
+|-------------------|-------------------------|-------------------------------------------------------|
+| client            | CLIENT                  | Ragione sociale cliente                               |
+| client_address1   | CLIENTADDRESS1          | Via/Piazza + numero indirizzo cliente                 |
+| client_address2   | CLIENTADDRESS2          | CAP + città cliente                                   |
+| date              | DATE                    | Data di oggi (GG/MM/AAAA)                             |
+| vs_rif            | VSRIF                   | Riferimento del sinistro (del cliente)                                   |
+| rif_broker        | RIFBROKER               | Riferimento del sinistro (del broker)                                     |
+| polizza           | POLIZZA                 | Numero polizza assicurativa                                       |
+| ns_rif            | NSRIF                   | Riferimento del sinistro (interno, perito della Salomone e Associati)                           |
+| assicurato        | ASSICURATO              | Ragione sociale dell'assicurato                                  |
+| indirizzo_ass1    | INDIRIZZOASSICURATO1    | Via/Piazza dell'indirizzo dell'assicurato                                  |
+| indirizzo_ass2    | INDIRIZZOASSICURATO2    | CAP + città dell'indirizzo dell'assicurato                                 |
+| luogo             | LUOGO                   | Luogo in cui è accaduto ilsinistro                                         |
+| data_danno        | DATADANNO               | Data del sinistro                                          |
+| cause             | CAUSE                   | Causa presunta del sinistro (oggetto di perizia)                                       |
+| data_incarico     | DATAINCARICO            | Data in cui è stato incaricato il perito dal cliente                                |
+| merce             | MERCE                   | Tipo merce sinistrata                                             |
+| peso_merce        | PESOMERCE               | Peso complessivo in kg della merce sinistrata                                |
+| valore_merce      | VALOREMERCE             | Valore in € della merce sinistrata                    |
+| data_intervento   | DATAINTERVENTO          | Data del sopralluogo sul luogo del sinistro da parte del perito della Salomone e Associati                                       |
+| dinamica          | DINAMICA                | Testo sez. 2 (l’evento del sinistroe gli accertamenti eseguiti dal perito) — **senza titolo** –                         |
+| quantificazione   | QUANTIFICAZIONE         | Testo sez. 3 (Quantificazione del danno, le cifre come lista puntata o tabella testo, in stile esempio) — **senza titolo**                        |
+| commento          | COMMENTO                | Testo sez. 4 (Sintesi tecnica finale) — **senza titolo**                        |
+| allegati          | ALLEGATI                | Elenco allegati, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
+
                        **senza** intestazione Spett.le ecc.
 
 Se un valore non è rintracciabile, restituisci stringa vuota "".
 
 ## Formato di output (rispettare ordine e maiusc/minusc delle chiavi)
-{{
+{
   "client": "",
   "client_address1": "",
   "client_address2": "",
@@ -116,18 +131,49 @@ Se un valore non è rintracciabile, restituisci stringa vuota "".
   "rif_broker": "",
   "polizza": "",
   "ns_rif": "",
-  "subject": "",
-  "body": ""
-}}
+  "assicurato": "",
+  "indirizzo_ass1": "",
+  "indirizzo_ass2": "",
+  "luogo": "",
+  "data_danno": "",
+  "cause": "",
+  "data_incarico": "",
+  "merce": "",
+  "peso_merce": "",
+  "valore_merce": "",
+  "data_intervento": "",
+  "dinamica": "",
+  "quantificazione": "",
+  "commento": "",
+  "allegati": ""
+}
 
 ❗ Regole:
-1. NIENTE markdown, html o commenti: solo JSON puro.
+1. NIENTE markdown fuori dai campi specificati, html o commenti: solo JSON puro.
 2. Scarta testo ridondante; mantieni nel campo "body" i paragrafi con
    numerazione, elenchi puntati, grassetti in **asterischi** se servono.
 3. Non aggiungere campi extra. Non cambiare i nomi chiave.
+4. Analizza con attenzione e con occhio peritale
+   le immagini nel blocco FOTO_DANNI_BASE64 e integra la causa
+   probabile dei danni nella sezione «2 – QUANTIFICAZIONE DEI DANNI».
+5. Per le chiavi "dinamica", "quantificazione", "commento"
+   scrivi solo il contenuto (i titoli sono già nel template).
+6. Separa tutti i paragrafi con UNA riga bianca (\n\n).
 
 RISPOSTA OBBLIGATORIA:
 Restituisci SOLO il JSON, senza testo extra prima o dopo. No talk, just go.
+
+### Sezioni testuali da costruire
+**dinamica**  
+Spiega l’evento del sinistro e gli accertamenti eseguiti dal perito, come nel modello (vedi esempio
+reference).
+
+**quantificazione**  
+Riporta le cifre come lista puntata o tabella testo, in stile esempio.
+Intestazione già presente nel template e che non devi ripetere: `**3 – QUANTIFICAZIONE DEL DANNO**`.
+
+**commento**  
+Sintesi tecnica finale. Intestazione già presente nel template e che non devi ripetere: `**4 – COMMENTO FINALE**`.
 
 ## Template di riferimento (tono & terminologia):
 <<<

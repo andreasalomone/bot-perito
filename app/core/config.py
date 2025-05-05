@@ -7,7 +7,12 @@ class Settings(BaseSettings):
     model_id: str = Field("meta-llama/llama-4-maverick:free", env="MODEL_ID")
     cleanup_ttl: int = Field(900, env="CLEANUP_TTL")           # longer to avoid race
     allow_vision: bool = Field(True, env="ALLOW_VISION")
-    max_prompt_chars: int = Field(16000, env="MAX_PROMPT_CHARS")
+    # Mav-LLama 4 accetta fino a ~1 M token ≃ 4 M caratteri.
+    # Portiamo quindi il limite del corpus testuale al massimo teorico.
+    max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
+    # Limite assoluto dell'intero prompt (testo + immagini base64).
+    # Allineato alla capacità massima stimata del modello.
+    max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
     reference_dir: Path = Field("app/templates/reference", env="REFERENCE_DIR")
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
 

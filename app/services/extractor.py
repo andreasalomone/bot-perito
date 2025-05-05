@@ -29,6 +29,19 @@ def _image_handler(fname: str, f: BinaryIO) -> Tuple[str, str]:
     token = f"data:image/jpeg;base64,{b64}"
     return "", token
 
+def extract_damage_image(f):
+    """
+    Always return ("", base64_token) so the vision model
+    receives every damage photo even if OCR finds text.
+    """
+    f.seek(0)
+    img = Image.open(f).convert("RGB")
+    img.thumbnail((512, 512))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=70)
+    token = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    return "", token
+
 _HANDLERS = {
     "pdf": _pdf_to_text,
     "docx": _docx_to_text,

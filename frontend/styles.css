@@ -11,6 +11,11 @@
   --ring-color: rgba(109, 40, 217, 0.3);
 }
 
+.file-input,
+textarea {
+  box-sizing: border-box;   /* <— this is the fix */
+}
+
 body {
   font-family: var(--font-sf);
   background-color: var(--background-color);
@@ -26,7 +31,7 @@ body {
 }
 
 .container {
-  width: 90%;
+  width: 100%;
   max-width: 800px;
   padding: 2.5rem;
   background: var(--card-background);
@@ -45,6 +50,7 @@ h2 {
 }
 
 .file-input-wrapper {
+  width: 100%;
   margin-bottom: 1.5rem;
 }
 

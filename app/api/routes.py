@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from docx import Document
 
 from app.core.config import settings
-from app.services.extractor import extract, guard_corpus
+from app.services.extractor import extract, guard_corpus, extract_damage_image
 from app.services.llm import build_prompt, call_llm, extract_json
 from app.services.doc_builder import inject
 
@@ -18,6 +18,7 @@ router = APIRouter()
 @router.post("/generate")
 async def generate(
     files: List[UploadFile] = File(...),
+    damage_imgs: List[UploadFile] = File(None),
     notes: str = Form("")
 ):
     """
@@ -39,6 +40,14 @@ async def generate(
                 if tok:
                     imgs.append(tok)
 
+            # --- foto danni --------------------------------------------------
+            for p in damage_imgs or []:
+                _, tok = extract_damage_image(p.file)
+                imgs.append(tok)
+
+            if len(imgs) > 10:                   
+                imgs = imgs[:10]
+
             corpus = guard_corpus("\n\n".join(texts))
             template_path = "app/templates/template.docx"
             template_excerpt = "\n".join(
@@ -47,11 +56,15 @@ async def generate(
 
             # --- 2: prompt + LLM ---------------------------------------------
             prompt = build_prompt(template_excerpt, corpus, imgs, notes)
-            if len(prompt) > settings.max_prompt_chars + 4000:
-                raise HTTPException(413, "File troppo grande")
+            # Includiamo un limite più permissivo che consideri anche
+            # l'eventuale base-64 delle immagini. Usiamo un parametro
+            # dedicato così da non dover toccare il truncation del solo
+            # corpus testuale (max_prompt_chars).
+            if len(prompt) > settings.max_total_prompt_chars:
+                raise HTTPException(413, "File troppo grande o troppi allegati")
 
             raw_reply = await call_llm(prompt)
-            print("LLM RAW >>>", raw_reply[:400])  # debug
+            # print("LLM RAW >>>", raw_reply[:400])  # debug
 
             # --- 3: validazione JSON -----------------------------------------
             try:
