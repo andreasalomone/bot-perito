@@ -1,0 +1,36 @@
+# ───────────────────────────────
+#  Version-control & editor stuff
+# ───────────────────────────────
+.git/**
+.DS_Store
+.idea/**
+.vscode/**
+*.swp
+*.swo
+
+# ───────────────────────────────
+#  Python build / cache artefacts
+# ───────────────────────────────
+__pycache__/**
+*.py[cod]
+build/**
+dist/**
+wheels/**
+.eggs/**
+*.egg-info/**
+
+# ───────────────────────────────
+#  Local virtual-envs
+# ───────────────────────────────
+.venv/**
+env/**
+venv/**
+ENV/**
+
+# ───────────────────────────────
+#  Project folders not needed at
+#  runtime (tests, docs, tmp, etc.)
+# ───────────────────────────────
+tests/**
+docs/**
+tmp/**
