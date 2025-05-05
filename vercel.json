@@ -12,8 +12,6 @@
         }
       }
     ],
-  
-    "installCommand": "pip install --no-cache-dir -r requirements-prod.txt --target .",
 
     "routes": [
       { "handle": "filesystem" },
