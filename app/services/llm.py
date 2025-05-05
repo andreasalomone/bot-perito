@@ -1,38 +1,56 @@
+import asyncio
 import json, re
-from openai import AsyncOpenAI, OpenAIError
+from openai import OpenAI, OpenAIError            # ← sync client
 from tenacity import retry, wait_exponential, stop_after_attempt
+
 from app.core.config import settings
 from app.services.style_loader import load_style_samples
 
-BULLET = "•"  # match the bullet used in your samples
+BULLET = "•"  # match bullet used in samples
 
-client = AsyncOpenAI(
+# ---------------------------------------------------------------
+# OpenRouter client (sync) with required headers
+# ---------------------------------------------------------------
+client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=settings.openrouter_api_key,
+    default_headers={
+        "HTTP-Referer": "http://localhost",
+        "X-Title":      "bot-perito",
+        # Authorization is auto‑added from api_key
+    },
 )
 
+# ---------------------------------------------------------------
+# LLM call wrapped in a thread so FastAPI remains async
+# ---------------------------------------------------------------
 @retry(wait=wait_exponential(multiplier=1, min=2, max=10),
        stop=stop_after_attempt(3),
-       retry=(
-           lambda exc: isinstance(exc, OpenAIError)
-           and exc.status in {429, 500, 502, 503, 504}
-       ))
+       retry=lambda exc: isinstance(exc, OpenAIError)
+                         and exc.status in {429, 500, 502, 503, 504})
 async def call_llm(prompt: str) -> str:
-    rsp = await client.chat.completions.create(
-        model=settings.model_id,
-        messages=[
-            {"role": "system",
-             "content": "Rispondi SOLO con un JSON valido e nient'altro."},
-            {"role": "user", "content": prompt},
-        ],
-    )
-    return rsp.choices[0].message.content.strip()
+    print("DEBUG key prefix:", settings.openrouter_api_key[:12])
 
+    def _sync_call() -> str:
+        rsp = client.chat.completions.create(
+            model=settings.model_id,
+            messages=[
+                {"role": "system",
+                 "content": "Rispondi SOLO con un JSON valido e nient'altro."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return rsp.choices[0].message.content.strip()
+
+    return await asyncio.to_thread(_sync_call)
+
+# ---------------------------------------------------------------
+# JSON extractor helper
+# ---------------------------------------------------------------
 def extract_json(text: str) -> dict:
     """
     Tenta di deserializzare `text` come JSON puro.
-    Se fallisce, estrae il primo blocco { … } con regex
-    e riprova. Lancia JSONDecodeError se non riesce.
+    Se fallisce, estrae il primo blocco { … } con regex e riprova.
     """
     try:
         return json.loads(text)
@@ -42,16 +60,17 @@ def extract_json(text: str) -> dict:
             raise
         return json.loads(match.group(0))
 
-from app.services.style_loader import load_style_samples
-from app.core.config import settings
-
+# ---------------------------------------------------------------
+# Prompt builder (unchanged)
+# ---------------------------------------------------------------
 def build_prompt(template_excerpt: str,
                  corpus: str,
                  images: list[str],
                  notes: str) -> str:
     """
     Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
-    Il testo finale verrà inserito da docxtpl, quindi qui non serve formattazione.
+    Il testo finale verrà inserito da docxtpl, quindi qui non serve
+    formattazione.
     """
 
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------

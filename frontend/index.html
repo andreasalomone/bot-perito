@@ -1,71 +1,92 @@
 <!doctype html>
-<html lang="it">
+<html lang="it" class="dark">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Generatore Report Perizia</title>
+  <title>Report AI - Perizia Intelligente</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
 </head>
 
 <body>
   <div class="container">
-    <h2>Il tuo perito assicurativo virtuale</h2>
+    <h2>Report AI</h2>
     <form id="frm">
       <div class="file-input-wrapper">
-        <input type="file" name="files" multiple required class="file-input">
+        <input 
+          type="file" 
+          name="files" 
+          multiple 
+          required 
+          class="file-input"
+          accept="image/*,.pdf,.doc,.docx"
+          aria-label="Carica i tuoi documenti">
       </div>
       
       <div class="textarea-wrapper">
         <textarea 
           name="notes" 
           rows="4" 
-          placeholder="Note aggiuntive (opzionale)"
+          placeholder="Inserisci qui eventuali note o dettagli aggiuntivi..."
           aria-label="Note aggiuntive"></textarea>
       </div>
       
-      <button type="submit">Crea Report</button>
+      <button type="submit">
+        <span>Genera Report</span>
+      </button>
     </form>
+    
     <div id="spin">
       <div class="spinner"></div>
     </div>
   </div>
 
   <script>
-    const f = document.getElementById('frm'), s = document.getElementById('spin');
+    const form = document.getElementById('frm');
+    const spinner = document.getElementById('spin');
+    const fileInput = form.querySelector('input[type="file"]');
+    const submitButton = form.querySelector('button[type="submit"]');
     
-    f.addEventListener('submit', async e => {
+    fileInput.addEventListener('change', () => {
+      const files = fileInput.files;
+      if (files.length > 0) {
+        const fileNames = Array.from(files).map(f => f.name).join(', ');
+        fileInput.title = fileNames;
+      }
+    });
+    
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      s.style.display = 'block';
+      spinner.style.display = 'block';
+      submitButton.disabled = true;
       
       try {
-        const r = await fetch('/generate', { 
+        const response = await fetch('/generate', { 
           method: 'POST', 
-          body: new FormData(f) 
+          body: new FormData(form) 
         });
         
-        s.style.display = 'none';
-        
-        if (r.status === 413) { 
-          alert('File troppo grande o troppi allegati'); 
-          return; 
+        if (response.status === 413) { 
+          throw new Error('File troppo grande o troppi allegati');
         }
         
-        if (!r.ok) { 
-          alert(await r.text()); 
-          return; 
+        if (!response.ok) { 
+          throw new Error(await response.text());
         }
         
-        const blob = await r.blob();
+        const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'report.docx';
         a.click();
         URL.revokeObjectURL(url);
-      } catch (err) { 
-        s.style.display = 'none';
-        alert('Errore di rete: ' + err);
+      } catch (err) {
+        alert(err.message || 'Si è verificato un errore durante la generazione del report');
+      } finally {
+        spinner.style.display = 'none';
+        submitButton.disabled = false;
       }
     });
   </script>
