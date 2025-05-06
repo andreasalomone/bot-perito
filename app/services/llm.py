@@ -138,7 +138,7 @@ ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 Se un valore non è rintracciabile, restituisci stringa vuota "".
 
 ## Formato di output (rispettare ordine e maiusc/minusc delle chiavi)
-{
+{{
   "client": "",
   "client_address1": "",
   "client_address2": "",
@@ -162,7 +162,7 @@ Se un valore non è rintracciabile, restituisci stringa vuota "".
   "quantificazione": "",
   "commento": "",
   "allegati": ""
-}
+}}
 
 ❗ Regole:
 1. NIENTE markdown fuori dai campi specificati, html o commenti: solo JSON puro.

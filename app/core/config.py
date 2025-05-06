@@ -16,7 +16,16 @@ class Settings(BaseSettings):
     reference_dir: Path = Field("app/templates/reference", env="REFERENCE_DIR")
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
 
-    class Config:
-        env_file = ".env"
+    # Add missing Supabase settings
+    supabase_url: str = Field(..., env="SUPABASE_URL")
+    supabase_anon_key: str = Field(..., env="SUPABASE_ANON_KEY")
+    supabase_service_role_key: str = Field(..., env="SUPABASE_SERVICE_ROLE_KEY")
+    ref_dir: Path = Field(Path("data/reference_reports"), env="REF_DIR")
+    emb_model_name: str = Field("all-MiniLM-L6-v2", env="EMB_MODEL_NAME")
+
+    model_config = {
+        "env_file": ".env",
+        "protected_namespaces": ("settings_",)  # Fix model_ namespace warning
+    }
 
 settings = Settings()
