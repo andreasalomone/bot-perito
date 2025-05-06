@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.services.extractor import extract, guard_corpus, extract_damage_image
 from app.services.llm import build_prompt, call_llm, extract_json
 from app.services.doc_builder import inject
+from app.services.rag import RAGService
 
 router = APIRouter()
 
@@ -55,7 +56,13 @@ async def generate(
             )
 
             # --- 2: prompt + LLM ---------------------------------------------
-            prompt = build_prompt(template_excerpt, corpus, imgs, notes)
+            rag = RAGService()
+            similar_cases = await rag.retrieve(corpus, k=3)
+
+            prompt = build_prompt(
+                template_excerpt, corpus, imgs, notes,
+                similar_cases=similar_cases
+            )
             # Includiamo un limite più permissivo che consideri anche
             # l'eventuale base-64 delle immagini. Usiamo un parametro
             # dedicato così da non dover toccare il truncation del solo
@@ -64,11 +71,16 @@ async def generate(
                 raise HTTPException(413, "File troppo grande o troppi allegati")
 
             raw_reply = await call_llm(prompt)
-            # print("LLM RAW >>>", raw_reply[:400])  # debug
+            
+            # --- DEBUG: stampa risposta e JSON --------------------------------
+            print("=== RAW LLM (primi 800 char) ===")
+            print(raw_reply[:800])   
 
             # --- 3: validazione JSON -----------------------------------------
             try:
                 ctx = extract_json(raw_reply)  # dict pulito
+                print("=== JSON estratto ===")
+                print(json.dumps(ctx, indent=2, ensure_ascii=False))
             except json.JSONDecodeError as e:
                 raise HTTPException(
                     status_code=500,
