@@ -30,3 +30,9 @@ pytesseract==0.3.13
 
 # optional: for OCR threaded event loop on dev
 nest-asyncio==1.6.0
+
+# RAG
+sentence-transformers==2.6.1
+torch==2.2.2
+async_lru>=1.0.0
+supabase==2.4.2

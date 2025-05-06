@@ -65,7 +65,8 @@ def extract_json(text: str) -> dict:
 def build_prompt(template_excerpt: str,
                  corpus: str,
                  images: list[str],
-                 notes: str) -> str:
+                 notes: str,
+                 similar_cases: list[dict] | None = None) -> str:
     """
     Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
     Il testo finale verrà inserito da docxtpl, quindi qui non serve
@@ -85,8 +86,23 @@ def build_prompt(template_excerpt: str,
     if images and settings.allow_vision:
         img_block = "\n\nFOTO_DANNI_BASE64:\n" + "\n".join(images)
 
+    # --- blocco casi simili ------------------------------------------------
+    cases_block = ""
+    if similar_cases:
+        joined = "\n\n---\n\n".join(
+            f"[{c['title']}]  \n{c['content_snippet']}"
+            for c in similar_cases
+        )
+        cases_block = (
+            "\n\nCASI_SIMILI (usa solo come riferimento stilistico e per informazioni quali indirizzi, cause):\n<<<\n"
+            f"{joined}\n>>>"
+        )
+
     # --- prompt finale ------------------------------------------------------
-    return f"""
+    
+
+    base_prompt = f"""
+
 Sei un perito assicurativo italiano della Salomone e Associati. Analizza i documenti e restituisci
 ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 
@@ -188,3 +204,6 @@ Sintesi tecnica finale. Intestazione già presente nel template e che non devi r
 ## Note extra:
 {notes}{img_block}
 """
+    
+# --- prompt finale con blocco RAG ------------------------------------
+    return f"{base_prompt}{cases_block}"
