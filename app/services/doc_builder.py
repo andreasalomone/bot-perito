@@ -40,7 +40,7 @@ def inject(template_path: str, json_payload: str) -> bytes:
         "VALOREMERCE":       ctx["valore_merce"],
         "DATAINTERVENTO":    ctx["data_intervento"],
         "DINAMICA_EVENTI":   "{{DINAMICA_EVENTI}}",
-        "ACCERTAMENTI"       "{{ACCERTAMENTI}}"
+        "ACCERTAMENTI":       "{{ACCERTAMENTI}}",
         "QUANTIFICAZIONE":   "{{QUANTIFICAZIONE}}",
         "COMMENTO":          "{{COMMENTO}}",
         "ALLEGATI":          ctx["allegati"],

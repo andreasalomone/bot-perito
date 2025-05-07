@@ -3,6 +3,7 @@ import os, asyncio, async_lru, dotenv
 from typing import List, Dict
 from sentence_transformers import SentenceTransformer
 from supabase import create_client
+from app.core.config import settings
 
 dotenv.load_dotenv()
 
@@ -43,6 +44,9 @@ class RAGService:
 
     # cache locale degli embedding per richieste ripetute
     @async_lru.alru_cache(maxsize=128)
+    async def _embed_async(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self.model.encode, text)
+    
     async def retrieve(self, text: str, k: int = 3) -> List[Dict]:
         """Ritorna lista di dizionari: id, title, snippet."""
         try:

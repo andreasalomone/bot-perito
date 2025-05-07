@@ -33,7 +33,7 @@ class PipelineService:
         # Prompt outline
         prompt = f"""
 Usa il contesto qui sotto (estratti template, documenti, casi simili, note, immagini) per
-generare un **outline dettagliato** della perizia, in formato JSON:
+generare un **outline dettagliato e completo** della perizia, in formato JSON:
 [
   {{
     "section": "dinamica_eventi",
@@ -78,7 +78,7 @@ generare un **outline dettagliato** della perizia, in formato JSON:
 ## IMMAGINI (base64):
 {" ; ".join(f"IMG{i+1}" for i in range(len(images)))}
 
-❗ Ogni sezione almeno 3 punti. Nessun testo al di fuori del JSON.
+❗ Ogni sezione almeno 3 punti. Nessun testo al di fuori del JSON. No talk, just go.
 """
         raw = await call_llm(prompt)
         data = extract_json(raw)
@@ -90,7 +90,7 @@ generare un **outline dettagliato** della perizia, in formato JSON:
         context: Dict[str, Any],
     ) -> str:
         """
-        Step 2: per ciascuna sezione, espandi con almeno 300 parole.
+        Step 2: per ciascuna sezione, espandi con almeno 200 parole.
         context include template_excerpt, corpus, notes, images, similar_cases, e outline completo.
         """
         sec = section["section"]
@@ -104,11 +104,11 @@ Scrivi la sezione **{title}** (key="{sec}") della perizia, basandoti su:
 
 Deve essere almeno 300 parole, rispondendo a tutte queste domande:
 {" e ".join({
-    '"dinamica_eventi": "Chi, cosa, quando, dove, perché?"',
-    '"accertamenti": "Quali prove fotografiche e rilievi?"',
-    '"quantificazione": "Dettaglia costi come lista puntata o tabella testo."',
-    '"commento": "Sintesi tecnica finale e raccomandazioni."'
-}.get(section["section"], ""))}
+    "dinamica_eventi": "Chi, cosa, quando, dove e perché è avvenuto il sinistro?",
+    "accertamenti":     "Quali prove fotografiche e rilievi del danno sono stati eseguiti? Chi, dove e quando?",
+    "quantificazione":  "Dettaglia costi totali del danno come lista puntata o tabella testo.",
+    "commento":         "Fornisci una sintesi tecnica finale e le raccomandazioni."
+}.get(sec, ""))}
 
 ## CONTEXTO:
 <<<
@@ -128,7 +128,7 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
 ## NOTE:
 {context["notes"]}
 
-❗ Restituisci JSON: {{ "{section['section']}": "<testo completo>" }}
++❗ Restituisci JSON: {{ "{sec}": "<testo completo>" }}
 """
         raw = await call_llm(prompt)
         out = extract_json(raw)
@@ -149,7 +149,7 @@ uniforma tono e stile, correggi errori e ripetizioni:
 {"".join(f"## {k}\n{v}\n\n" for k,v in sections.items())}
 >>>
 
-❗ Restituisci SOLO il TESTO finale, senza JSON né commenti.
+❗ Restituisci SOLO il TESTO finale, senza JSON né commenti. No talk, just go.
 """
         raw = await call_llm(prompt)
         return raw.strip()
