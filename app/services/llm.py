@@ -1,10 +1,11 @@
 import asyncio
 import json
-import re
 import logging
+import re
 from uuid import uuid4
+
 from openai import OpenAI, OpenAIError  # ← sync client
-from tenacity import retry, wait_exponential, stop_after_attempt
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.services.style_loader import load_style_samples
@@ -45,7 +46,7 @@ client = OpenAI(
     wait=wait_exponential(multiplier=1, min=2, max=10),
     stop=stop_after_attempt(3),
     retry=lambda exc: isinstance(exc, OpenAIError)
-    and exc.status in {429, 500, 502, 503, 504},
+    and getattr(exc, "status", None) in {429, 500, 502, 503, 504},
 )
 async def call_llm(prompt: str) -> str:
     request_id = str(uuid4())
@@ -65,7 +66,8 @@ async def call_llm(prompt: str) -> str:
                     {"role": "user", "content": prompt},
                 ],
             )
-            content = rsp.choices[0].message.content.strip()
+            # Guard against None in content
+            content = (rsp.choices[0].message.content or "").strip()
             logger.debug(
                 "[%s] LLM response received, length: %d chars", request_id, len(content)
             )

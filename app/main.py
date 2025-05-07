@@ -1,12 +1,13 @@
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.api.routes import router
 from app.core.logging import setup_logging
-from fastapi.middleware.cors import CORSMiddleware
 from app.core.models import embedding_model
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 setup_logging()
 

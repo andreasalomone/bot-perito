@@ -1,1 +1,1 @@
-# Make `app` a Python package for consistent imports 
+# Make `app` a Python package for consistent imports

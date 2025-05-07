@@ -1,29 +1,27 @@
-# app/api/routes.py
-
 import json
 import logging
-from uuid import uuid4
 from tempfile import TemporaryDirectory
 from typing import List
+from uuid import uuid4
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse, PlainTextResponse
 from docx import Document
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app.core.config import settings
+from app.core.security import Depends, verify_api_key
 from app.core.validation import validate_upload
-from app.services.extractor import extract, guard_corpus, extract_damage_image
+from app.services.doc_builder import inject
+from app.services.extractor import extract, extract_damage_image, guard_corpus
 from app.services.llm import (
+    JSONParsingError,
+    LLMError,
     build_prompt,
     call_llm,
     extract_json,
-    LLMError,
-    JSONParsingError,
 )
-from app.services.rag import RAGService
 from app.services.pipeline import PipelineService
-from app.services.doc_builder import inject
-from app.core.security import verify_api_key, Depends
+from app.services.rag import RAGService
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -68,7 +66,7 @@ async def generate(
             texts, imgs = [], []
             for f in files:
                 try:
-                    txt, tok = extract(f.filename, f.file)
+                    txt, tok = extract(f.filename or "", f.file)
                     if txt:
                         texts.append(txt)
                     if tok:

@@ -1,5 +1,5 @@
-from fastapi.security import APIKeyHeader
 from fastapi import Depends, HTTPException
+from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
 

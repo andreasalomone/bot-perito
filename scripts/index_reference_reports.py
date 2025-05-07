@@ -5,12 +5,12 @@ e inserisce in Supabase.
 """
 
 import os
-from pathlib import Path
 from datetime import date
+from pathlib import Path
 
 import dotenv
-from sentence_transformers import SentenceTransformer
 from docx import Document
+from sentence_transformers import SentenceTransformer
 from supabase import create_client
 from tqdm import tqdm
 
@@ -28,7 +28,7 @@ model = SentenceTransformer(EMB_MODEL_NAME, device="cpu")  # CPU ok
 
 # --- Helpers ----------------------------------------------------
 def extract_text(docx_path: Path) -> str:
-    doc = Document(docx_path)
+    doc = Document(str(docx_path))
     # rimuovi righe vuote
     return "\n".join(p.text.strip() for p in doc.paragraphs if p.text.strip())
 

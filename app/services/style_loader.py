@@ -1,6 +1,8 @@
-from pathlib import Path
-from docx import Document
 from functools import lru_cache
+from pathlib import Path
+
+from docx import Document
+
 from app.core.config import settings
 
 
@@ -13,7 +15,7 @@ def load_style_samples() -> str:
     chunks = []
     for docx_file in ref_path.glob("*.docx"):
         try:
-            doc = Document(docx_file)
+            doc = Document(str(docx_file))
             para_text = "\n".join(
                 p.text for p in doc.paragraphs[: settings.max_style_paragraphs]
             )

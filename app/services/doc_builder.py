@@ -1,10 +1,11 @@
-import json
 import io
-import re
+import json
 import logging
+import re
 from uuid import uuid4
-from docxtpl import DocxTemplate
+
 from docx import Document
+from docxtpl import DocxTemplate
 
 # Configure module logger
 logger = logging.getLogger(__name__)

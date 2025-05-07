@@ -1,13 +1,16 @@
 from __future__ import annotations
-import logging
-from uuid import uuid4
-import os
+
 import asyncio
+import logging
+import os
+from typing import Dict, List
+from uuid import uuid4
+
 import async_lru
 import dotenv
-from typing import List, Dict
-from app.core.models import embedding_model
 from supabase import create_client
+
+from app.core.models import embedding_model
 
 # Configure module logger
 logger = logging.getLogger(__name__)

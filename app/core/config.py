@@ -1,6 +1,7 @@
 from pathlib import Path
-from pydantic_settings import BaseSettings
+
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
     allow_vision: bool = Field(True, env="ALLOW_VISION")
     max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
     max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
-    reference_dir: Path = Field("app/templates/reference", env="REFERENCE_DIR")
+    reference_dir: Path = Field(Path("app/templates/reference"), env="REFERENCE_DIR")
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
 
     supabase_url: str = Field(..., env="SUPABASE_URL")
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     emb_model_name: str = Field("all-MiniLM-L6-v2", env="EMB_MODEL_NAME")
     api_key: str = Field(..., env="API_KEY")
 
-    model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
+    model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}  # type: ignore[typeddict-unknown-key]
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

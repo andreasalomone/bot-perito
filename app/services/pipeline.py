@@ -1,11 +1,12 @@
 from __future__ import annotations
-import logging
-from uuid import uuid4
-from typing import Any, Dict, List
-from app.core.models import embedding_model
 
+import logging
+from typing import Any, Dict, List
+from uuid import uuid4
+
+from app.core.models import embedding_model
+from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
 from app.services.rag import RAGService
-from app.services.llm import call_llm, extract_json, LLMError, JSONParsingError
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class PipelineService:
         similar_cases: List[Dict[str, Any]],
         notes: str,
         images: List[str],
-    ) -> List[str]:
+    ) -> List[Dict[str, Any]]:
         """
         Step 1: genera un outline JSON con titoli e bullet points per ciascuna sezione.
         Restituisce lista di titoli di sezione.

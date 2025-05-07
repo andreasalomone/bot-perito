@@ -1,5 +1,5 @@
-from PIL import Image
 import pytesseract
+from PIL import Image
 
 
 def ocr(file_obj) -> str:

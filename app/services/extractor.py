@@ -1,13 +1,15 @@
 import base64
 import io
 import logging
-from uuid import uuid4
-from docx import Document
-import pdfplumber
 from typing import BinaryIO, Tuple
+from uuid import uuid4
+
+import pdfplumber
+from docx import Document
 from PIL import Image
-from app.core.ocr import ocr
+
 from app.core.config import settings
+from app.core.ocr import ocr
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -20,7 +22,10 @@ class ExtractorError(Exception):
 def _pdf_to_text(f: BinaryIO) -> str:
     """Extract text from PDF file."""
     try:
-        with pdfplumber.open(f) as pdf:
+        # Read binary stream into BytesIO for pdfplumber
+        f.seek(0)
+        buffer = io.BytesIO(f.read())
+        with pdfplumber.open(buffer) as pdf:
             text = "\n".join(p.extract_text() or "" for p in pdf.pages)
             logger.debug("Extracted %d chars from PDF", len(text))
             return text
@@ -32,7 +37,10 @@ def _pdf_to_text(f: BinaryIO) -> str:
 def _docx_to_text(f: BinaryIO) -> str:
     """Extract text from DOCX file."""
     try:
-        doc = Document(f)
+        # Read binary stream into BytesIO for Document
+        f.seek(0)
+        buffer = io.BytesIO(f.read())
+        doc = Document(buffer)
         text = "\n".join(p.text for p in doc.paragraphs)
         logger.debug("Extracted %d chars from DOCX", len(text))
         return text

@@ -1,7 +1,8 @@
 import logging
 from pathlib import Path
+
 import magic
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ async def validate_upload(file: UploadFile, request_id: str) -> None:
     """
     try:
         # Check file extension
-        ext = Path(file.filename).suffix.lower()
+        ext = Path(file.filename or "").suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
             logger.warning(
                 "[%s] Rejected file with invalid extension: %s", request_id, ext
