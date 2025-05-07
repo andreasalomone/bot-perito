@@ -3,6 +3,7 @@ from docx import Document
 from functools import lru_cache
 from app.core.config import settings
 
+
 @lru_cache
 def load_style_samples() -> str:
     ref_path = Path(settings.reference_dir)

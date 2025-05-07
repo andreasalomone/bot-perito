@@ -17,6 +17,19 @@
       Carica i documenti per il report
     </label>
     <form id="frm">
+      <!-- API Key field -->
+      <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
+        API Key
+      </label>
+      <input
+        type="password"
+        id="api_key"
+        placeholder="Inserisci la tua API Key"
+        required
+        style="width:100%; padding:1rem; background:var(--background-color);
+               border:1px solid var(--border-color); border-radius:0.75rem;
+               color:var(--text-color); font-size:1rem; margin-bottom:1.5rem;"
+      >
       <div class="file-input-wrapper">
         <input type="file" name="files" multiple required class="file-input" accept="image/*,.pdf,.doc,.docx"
           aria-label="Carica i tuoi documenti">
@@ -56,6 +69,7 @@
     const spinner = document.getElementById('spin');
     const fileInput = form.querySelector('input[type="file"]');
     const submitButton = form.querySelector('button[type="submit"]');
+    const apiKeyInput = document.getElementById('api_key');
 
     fileInput.addEventListener('change', () => {
       const files = fileInput.files;
@@ -71,9 +85,11 @@
       submitButton.disabled = true;
 
       try {
+        const formData = new FormData(form);
         const response = await fetch('/generate', {
           method: 'POST',
-          body: new FormData(form)
+          headers: { 'X-API-Key': apiKeyInput.value },
+          body: formData
         });
 
         if (response.status === 413) {

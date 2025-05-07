@@ -1,12 +1,28 @@
 import asyncio
-import json, re
-from openai import OpenAI, OpenAIError            # ← sync client
+import json
+import re
+import logging
+from uuid import uuid4
+from openai import OpenAI, OpenAIError  # ← sync client
 from tenacity import retry, wait_exponential, stop_after_attempt
 
 from app.core.config import settings
 from app.services.style_loader import load_style_samples
 
+# Configure module logger
+logger = logging.getLogger(__name__)
+
 BULLET = "•"  # match bullet used in samples
+
+
+# Custom exceptions for better error handling
+class LLMError(Exception):
+    """Raised when LLM call fails"""
+
+
+class JSONParsingError(Exception):
+    """Raised when JSON parsing fails"""
+
 
 # ---------------------------------------------------------------
 # OpenRouter client (sync) with required headers
@@ -16,32 +32,57 @@ client = OpenAI(
     api_key=settings.openrouter_api_key,
     default_headers={
         "HTTP-Referer": "http://localhost",
-        "X-Title":      "bot-perito",
+        "X-Title": "bot-perito",
         # Authorization is auto‑added from api_key
     },
 )
 
+
 # ---------------------------------------------------------------
 # LLM call wrapped in a thread so FastAPI remains async
 # ---------------------------------------------------------------
-@retry(wait=wait_exponential(multiplier=1, min=2, max=10),
-       stop=stop_after_attempt(3),
-       retry=lambda exc: isinstance(exc, OpenAIError)
-                         and exc.status in {429, 500, 502, 503, 504})
+@retry(
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    stop=stop_after_attempt(3),
+    retry=lambda exc: isinstance(exc, OpenAIError)
+    and exc.status in {429, 500, 502, 503, 504},
+)
 async def call_llm(prompt: str) -> str:
+    request_id = str(uuid4())
+    logger.info(
+        "[%s] Making LLM API call with model: %s", request_id, settings.model_id
+    )
 
     def _sync_call() -> str:
-        rsp = client.chat.completions.create(
-            model=settings.model_id,
-            messages=[
-                {"role": "system",
-                 "content": "Rispondi SOLO con un JSON valido e nient'altro."},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return rsp.choices[0].message.content.strip()
+        try:
+            rsp = client.chat.completions.create(
+                model=settings.model_id,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Rispondi SOLO con un JSON valido e nient'altro.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            content = rsp.choices[0].message.content.strip()
+            logger.debug(
+                "[%s] LLM response received, length: %d chars", request_id, len(content)
+            )
+            return content
+        except OpenAIError as e:
+            logger.error("[%s] OpenAI API error: %s", request_id, str(e), exc_info=True)
+            raise LLMError(f"OpenAI API error: {str(e)}") from e
+        except Exception as e:
+            logger.exception("[%s] Unexpected error in LLM call", request_id)
+            raise LLMError(f"Unexpected error in LLM call: {str(e)}") from e
 
-    return await asyncio.to_thread(_sync_call)
+    try:
+        return await asyncio.to_thread(_sync_call)
+    except Exception:
+        logger.exception("[%s] Failed to execute LLM call in thread", request_id)
+        raise
+
 
 # ---------------------------------------------------------------
 # JSON extractor helper
@@ -51,22 +92,48 @@ def extract_json(text: str) -> dict:
     Tenta di deserializzare `text` come JSON puro.
     Se fallisce, estrae il primo blocco { … } con regex e riprova.
     """
+    request_id = str(uuid4())
+    logger.debug(
+        "[%s] Attempting to parse JSON response, length: %d", request_id, len(text)
+    )
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.S)
-        if not match:
-            raise
-        return json.loads(match.group(0))
+        logger.warning(
+            "[%s] Initial JSON parse failed, attempting regex extraction", request_id
+        )
+        try:
+            match = re.search(r"\{.*\}", text, re.S)
+            if not match:
+                logger.error("[%s] No JSON-like structure found in text", request_id)
+                raise JSONParsingError("No JSON structure found in response")
+            extracted = match.group(0)
+            logger.info("[%s] Found JSON-like structure, attempting parse", request_id)
+            return json.loads(extracted)
+        except json.JSONDecodeError as e:
+            logger.error(
+                "[%s] Failed to parse extracted JSON: %s",
+                request_id,
+                str(e),
+                exc_info=True,
+            )
+            raise JSONParsingError(f"Failed to parse JSON: {str(e)}") from e
+        except Exception as e:
+            logger.exception("[%s] Unexpected error parsing JSON", request_id)
+            raise JSONParsingError(f"Unexpected error parsing JSON: {str(e)}") from e
+
 
 # ---------------------------------------------------------------
 # Prompt builder (unchanged)
 # ---------------------------------------------------------------
-def build_prompt(template_excerpt: str,
-                 corpus: str,
-                 images: list[str],
-                 notes: str,
-                 similar_cases: list[dict] | None = None) -> str:
+def build_prompt(
+    template_excerpt: str,
+    corpus: str,
+    images: list[str],
+    notes: str,
+    similar_cases: list[dict] | None = None,
+) -> str:
     """
     Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
     Il testo finale verrà inserito da docxtpl, quindi qui non serve
@@ -90,8 +157,7 @@ def build_prompt(template_excerpt: str,
     cases_block = ""
     if similar_cases:
         joined = "\n\n---\n\n".join(
-            f"[{c['title']}]  \n{c['content_snippet']}"
-            for c in similar_cases
+            f"[{c['title']}]  \n{c['content_snippet']}" for c in similar_cases
         )
         cases_block = (
             "\n\nCASI_SIMILI (usa solo come riferimento stilistico e per informazioni quali indirizzi, cause):\n<<<\n"
@@ -99,7 +165,6 @@ def build_prompt(template_excerpt: str,
         )
 
     # --- prompt finale ------------------------------------------------------
-    
 
     base_prompt = f"""
 
@@ -183,17 +248,17 @@ RISPOSTA OBBLIGATORIA:
 Restituisci SOLO il JSON, senza testo extra prima o dopo. No talk, just go.
 
 ### Sezioni testuali da costruire
-**dinamica_eventi**  
-Spiega **solo** l’evento del sinistro rispondendo alle domande: chi, come, dove, quando, perché è avvenuto.  
+**dinamica_eventi**
+Spiega **solo** l'evento del sinistro rispondendo alle domande: chi, come, dove, quando, perché è avvenuto.
 
-**accertamenti**  
-Descrivi **solo** gli accertamenti peritali: sopralluogo, rilievi, danni osservati.  
+**accertamenti**
+Descrivi **solo** gli accertamenti peritali: sopralluogo, rilievi, danni osservati.
 
-**quantificazione**  
+**quantificazione**
 Riporta le cifre come lista puntata o tabella testo, in stile esempio.
 Intestazione già presente nel template e che non devi ripetere: `**3 – QUANTIFICAZIONE DEL DANNO**`.
 
-**commento**  
+**commento**
 Sintesi tecnica finale. Intestazione già presente nel template e che non devi ripetere: `**4 – COMMENTO FINALE**`.
 
 ## Template di riferimento (tono & terminologia):
@@ -209,6 +274,6 @@ Sintesi tecnica finale. Intestazione già presente nel template e che non devi r
 ## Note extra:
 {notes}{img_block}
 """
-    
-# --- prompt finale con blocco RAG ------------------------------------
+
+    # --- prompt finale con blocco RAG ------------------------------------
     return f"{base_prompt}{cases_block}"
