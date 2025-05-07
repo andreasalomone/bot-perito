@@ -7,17 +7,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import router
 from app.core.logging import setup_logging
-from app.core.models import embedding_model
 
 setup_logging()
 
 app = FastAPI(title="Report-AI MVP")
-
-
-@app.on_event("startup")
-def load_models():
-    # Preload embedding model to avoid cold-start latency
-    _ = embedding_model
 
 
 @app.exception_handler(StarletteHTTPException)

@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from app.core.models import embedding_model
+from app.core.embeddings import embed
 from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
 from app.services.rag import RAGService
 
@@ -23,15 +23,8 @@ class PipelineService:
         logger.info("Initializing PipelineService")
         # RAG per contesto
         self.rag = RAGService()
-        # Modello embedding per chunking se servisse
-        try:
-            self.chunk_model = embedding_model
-            logger.debug("Initialized SentenceTransformer model")
-        except Exception as e:
-            logger.error(
-                "Failed to initialize SentenceTransformer: %s", str(e), exc_info=True
-            )
-            raise PipelineError("Failed to initialize embedding model") from e
+        # Funzione embed (Hugging Face API) per eventuale chunking locale
+        self.chunk_model = embed
 
     async def generate_outline(
         self,
@@ -182,7 +175,7 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
 ## NOTE:
 {context["notes"]}
 
-+❗ Restituisci JSON: {{ "{sec}": "<testo completo>" }}
+❗ Restituisci JSON: {{ "{sec}": "<testo completo>" }}
 """
             raw = await call_llm(prompt)
             out = extract_json(raw)

@@ -33,8 +33,6 @@ pytesseract==0.3.13
 nest-asyncio==1.6.0
 
 # RAG
-sentence-transformers==2.6.1
-torch>=2.2.2
 async-lru>=2.0.5
 supabase==2.4.2
 tqdm==4.67.1

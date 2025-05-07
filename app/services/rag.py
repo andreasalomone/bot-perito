@@ -10,7 +10,7 @@ import async_lru
 import dotenv
 from supabase import create_client
 
-from app.core.models import embedding_model
+from app.core.embeddings import embed
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -46,22 +46,19 @@ class RAGService:
             logger.info("Initializing Supabase client")
             self.sb = create_client(url, key)
 
-            # Reuse cached embedding model
-            self.model = embedding_model
-            logger.info("Using cached embedding model")
+            # No local embedding model; will call external API via embed()
 
         except Exception as e:
             logger.exception("Failed to initialize RAGService")
             # Set default values to prevent attribute errors
             self.sb = None
-            self.model = None
             raise RAGError("Failed to initialize RAG service") from e
 
     # cache locale degli embedding per richieste ripetute
     @async_lru.alru_cache(maxsize=128)
     async def _embed_async(self, text: str) -> list[float]:
         try:
-            return await asyncio.to_thread(self.model.encode, text)
+            return await asyncio.to_thread(embed, text)
         except Exception as e:
             logger.exception("Failed to generate embedding")
             raise RAGError("Failed to generate embedding") from e
@@ -77,18 +74,14 @@ class RAGService:
         )
 
         try:
-            if self.model is None:
-                logger.error("[%s] Model not initialized properly", request_id)
-                raise RAGError("Embedding model not initialized")
-
-            logger.debug("[%s] Generating embedding", request_id)
-            emb = await self._embed_async(text)
-
             if self.sb is None:
                 logger.error(
                     "[%s] Supabase client not initialized properly", request_id
                 )
                 raise RAGError("Supabase client not initialized")
+
+            logger.debug("[%s] Generating embedding", request_id)
+            emb = await self._embed_async(text)
 
             logger.debug("[%s] Querying Supabase for similar documents", request_id)
             # Offload supabase RPC to thread to avoid blocking event loop
