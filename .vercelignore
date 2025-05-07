@@ -34,3 +34,5 @@ ENV/**
 tests/**
 docs/**
 tmp/**
+
+data/**

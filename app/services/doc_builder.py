@@ -39,6 +39,10 @@ def inject(template_path: str, json_payload: str) -> bytes:
         "PESOMERCE":         ctx["peso_merce"],
         "VALOREMERCE":       ctx["valore_merce"],
         "DATAINTERVENTO":    ctx["data_intervento"],
+        "DINAMICA_EVENTI":   "{{DINAMICA_EVENTI}}",
+        "ACCERTAMENTI"       "{{ACCERTAMENTI}}"
+        "QUANTIFICAZIONE":   "{{QUANTIFICAZIONE}}",
+        "COMMENTO":          "{{COMMENTO}}",
         "ALLEGATI":          ctx["allegati"],
     }
     tpl.render(mapping)
@@ -48,9 +52,10 @@ def inject(template_path: str, json_payload: str) -> bytes:
     doc = Document(bio)
 
     section_map = {
-        "{{DINAMICA}}":        ctx["dinamica"],
-        "{{QUANTIFICAZIONE}}": ctx["quantificazione"],
-        "{{COMMENTO}}":        ctx["commento"],
+        "{{DINAMICA_EVENTI}}":        ctx["dinamica_eventi"],
+        "{{ACCERTAMENTI}}":           ctx["accertamenti"],
+        "{{QUANTIFICAZIONE}}":        ctx["quantificazione"],
+        "{{COMMENTO}}":               ctx["commento"],
     }
 
     for p in doc.paragraphs:

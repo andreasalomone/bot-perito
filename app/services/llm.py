@@ -103,8 +103,8 @@ def build_prompt(template_excerpt: str,
 
     base_prompt = f"""
 
-Sei un perito assicurativo italiano della Salomone e Associati. Analizza i documenti e restituisci
-ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
+Sei un perito assicurativo italiano della Salomone e Associati, abituato a scrivere perizie tecniche più lunghe e dettagliate possibili, ai clienti piace così.
+Analizza i documenti e restituisci ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 
 ## Definizione chiavi
 | chiave JSON       | tag DOCX                | contenuto richiesto                                   |
@@ -128,10 +128,11 @@ ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 | peso_merce        | PESOMERCE               | Peso complessivo in kg della merce sinistrata                                |
 | valore_merce      | VALOREMERCE             | Valore in € della merce sinistrata                    |
 | data_intervento   | DATAINTERVENTO          | Data del sopralluogo sul luogo del sinistro da parte del perito della Salomone e Associati                                       |
-| dinamica          | DINAMICA                | Testo sez. 2 (l’evento del sinistroe gli accertamenti eseguiti dal perito) — **senza titolo** –                         |
-| quantificazione   | QUANTIFICAZIONE         | Testo sez. 3 (Quantificazione del danno, le cifre come lista puntata o tabella testo, in stile esempio) — **senza titolo**                        |
-| commento          | COMMENTO                | Testo sez. 4 (Sintesi tecnica finale) — **senza titolo**                        |
-| allegati          | ALLEGATI                | Elenco allegati, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
+| dinamica_eventi   | DINAMICA_EVENTI         | Sez. 2a – descrivi **solo** la dinamica del sinistro, chi, come, dove, quando, perché è avvenuto — **senza titolo** –                         |
+| accertamenti      | ACCERTAMENTI            | Sez. 2b – descrivi gli accertamenti peritali eseguiti, dove, quando, come, con chi, con chi è stato incaricato, con chi è stato coinvolto, le scoperte peritali degli accertamenti — **senza titolo** –                         |
+| quantificazione   | QUANTIFICAZIONE         | Sez. 3 – quantificazione del danno totale, le cifre come lista puntata o tabella testo, in stile esempio) — **senza titolo**                        |
+| commento          | COMMENTO                | Sez. 4 – sintesi tecnica finale, come da esempio — **senza titolo**                        |
+| allegati          | ALLEGATI                | Elenco allegati in bullet list uno sopra l'altro, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
 
                        **senza** intestazione Spett.le ecc.
 
@@ -158,7 +159,8 @@ Se un valore non è rintracciabile, restituisci stringa vuota "".
   "peso_merce": "",
   "valore_merce": "",
   "data_intervento": "",
-  "dinamica": "",
+  "dinamica_eventi": "",
+  "accertamenti": "",
   "quantificazione": "",
   "commento": "",
   "allegati": ""
@@ -172,17 +174,20 @@ Se un valore non è rintracciabile, restituisci stringa vuota "".
 4. Analizza con attenzione e con occhio peritale
    le immagini nel blocco FOTO_DANNI_BASE64 e integra la causa
    probabile dei danni nella sezione «2 – QUANTIFICAZIONE DEI DANNI».
-5. Per le chiavi "dinamica", "quantificazione", "commento"
+5. Per le chiavi "dinamica_eventi", "accertamenti", "quantificazione", "commento"
    scrivi solo il contenuto (i titoli sono già nel template).
+   Ognuna di queste 4 sezioni deve contenere almeno 200 parole.
 6. Separa tutti i paragrafi con UNA riga bianca (\n\n).
 
 RISPOSTA OBBLIGATORIA:
 Restituisci SOLO il JSON, senza testo extra prima o dopo. No talk, just go.
 
 ### Sezioni testuali da costruire
-**dinamica**  
-Spiega l’evento del sinistro e gli accertamenti eseguiti dal perito, come nel modello (vedi esempio
-reference).
+**dinamica_eventi**  
+Spiega **solo** l’evento del sinistro rispondendo alle domande: chi, come, dove, quando, perché è avvenuto.  
+
+**accertamenti**  
+Descrivi **solo** gli accertamenti peritali: sopralluogo, rilievi, danni osservati.  
 
 **quantificazione**  
 Riporta le cifre come lista puntata o tabella testo, in stile esempio.
