@@ -36,3 +36,6 @@ docs/**
 tmp/**
 
 data/**
+
+# keep frontend static out of python lambda
+!frontend/**
