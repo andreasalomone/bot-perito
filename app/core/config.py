@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
     max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
     reference_dir: Path = Field(Path("app/templates/reference"), env="REFERENCE_DIR")
+    template_path: Path = Field(
+        Path("app/templates/template.docx"), env="TEMPLATE_PATH"
+    )
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
 
     supabase_url: str | None = Field(None, env="SUPABASE_URL")

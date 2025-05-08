@@ -7,6 +7,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import router
 from app.core.logging import setup_logging
+from app.services.doc_builder import DocBuilderError
+from app.services.extractor import ExtractorError
+from app.services.llm import JSONParsingError, LLMError
+from app.services.pipeline import PipelineError
+from app.services.rag import RAGError
 
 setup_logging()
 
@@ -24,6 +29,36 @@ async def validation_exception_handler(request, exc):
         {"error": "Input validation failed", "details": exc.errors()},
         status_code=422,
     )
+
+
+@app.exception_handler(ExtractorError)
+async def extractor_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.exception_handler(RAGError)
+async def rag_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.exception_handler(PipelineError)
+async def pipeline_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.exception_handler(DocBuilderError)
+async def docbuilder_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.exception_handler(LLMError)
+async def llm_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.exception_handler(JSONParsingError)
+async def jsonparsing_exception_handler(request, exc):
+    return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 app.add_middleware(

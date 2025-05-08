@@ -6,13 +6,18 @@ from uuid import uuid4
 
 from docx import Document
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.security import Depends, verify_api_key
 from app.core.validation import validate_upload
-from app.services.doc_builder import inject
-from app.services.extractor import extract, extract_damage_image, guard_corpus
+from app.services.doc_builder import DocBuilderError, inject
+from app.services.extractor import (
+    ExtractorError,
+    extract,
+    extract_damage_image,
+    guard_corpus,
+)
 from app.services.llm import (
     JSONParsingError,
     LLMError,
@@ -20,8 +25,8 @@ from app.services.llm import (
     call_llm,
     extract_json,
 )
-from app.services.pipeline import PipelineService
-from app.services.rag import RAGService
+from app.services.pipeline import PipelineError, PipelineService
+from app.services.rag import RAGError, RAGService
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -79,6 +84,15 @@ async def generate(
                         len(txt) if txt else 0,
                         bool(tok),
                     )
+                except ExtractorError as e:
+                    logger.error(
+                        "[%s] Extraction error from %s: %s",
+                        request_id,
+                        f.filename,
+                        str(e),
+                        exc_info=True,
+                    )
+                    raise HTTPException(400, str(e))
                 except Exception as e:
                     logger.error(
                         "[%s] Failed to extract from %s: %s",
@@ -96,6 +110,15 @@ async def generate(
                     logger.debug(
                         "[%s] Extracted damage image from %s", request_id, p.filename
                     )
+                except ExtractorError as e:
+                    logger.error(
+                        "[%s] Extraction error for damage image %s: %s",
+                        request_id,
+                        p.filename,
+                        str(e),
+                        exc_info=True,
+                    )
+                    raise HTTPException(400, str(e))
                 except Exception as e:
                     logger.error(
                         "[%s] Failed to extract damage image from %s: %s",
@@ -115,7 +138,7 @@ async def generate(
                 imgs = imgs[:10]
 
             corpus = guard_corpus("\n\n".join(texts))
-            template_path = "app/templates/template.docx"
+            template_path = str(settings.template_path)
             try:
                 template_excerpt = "\n".join(
                     p.text for p in Document(template_path).paragraphs[:8]
@@ -145,6 +168,14 @@ async def generate(
                         request_id,
                         len(similar_cases),
                     )
+                except RAGError as e:
+                    logger.error(
+                        "[%s] RAG error: %s",
+                        request_id,
+                        str(e),
+                        exc_info=True,
+                    )
+                    raise HTTPException(500, str(e))
                 except Exception as e:
                     logger.error(
                         "[%s] RAG retrieval failed: %s",
@@ -193,6 +224,14 @@ async def generate(
                 logger.info(
                     "[%s] Pipeline processing completed successfully", request_id
                 )
+            except PipelineError as e:
+                logger.error(
+                    "[%s] Pipeline error: %s",
+                    request_id,
+                    str(e),
+                    exc_info=True,
+                )
+                raise HTTPException(500, str(e))
             except Exception:
                 logger.exception("[%s] Pipeline processing failed", request_id)
                 raise HTTPException(500, f"Report generation failed (id: {request_id})")
@@ -217,6 +256,14 @@ async def generate(
                     ),
                     headers={"Content-Disposition": "attachment; filename=report.docx"},
                 )
+            except DocBuilderError as e:
+                logger.error(
+                    "[%s] Document builder error: %s",
+                    request_id,
+                    str(e),
+                    exc_info=True,
+                )
+                raise HTTPException(500, str(e))
             except Exception:
                 logger.exception("[%s] Failed to generate final document", request_id)
                 raise HTTPException(
@@ -227,7 +274,7 @@ async def generate(
         raise
     except Exception:
         logger.exception("[%s] Unexpected error during report generation", request_id)
-        return PlainTextResponse(
+        raise HTTPException(
+            500,
             f"Errore interno (id: {request_id}). Contattare il supporto con questo ID.",
-            status_code=500,
         )

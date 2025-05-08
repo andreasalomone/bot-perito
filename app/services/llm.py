@@ -1,10 +1,9 @@
-import asyncio
 import json
 import logging
 import re
 from uuid import uuid4
 
-from openai import OpenAI, OpenAIError  # ← sync client
+from openai import AsyncOpenAI, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
@@ -28,7 +27,7 @@ class JSONParsingError(Exception):
 # ---------------------------------------------------------------
 # OpenRouter client (sync) with required headers
 # ---------------------------------------------------------------
-client = OpenAI(
+client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=settings.openrouter_api_key,
     default_headers={
@@ -54,36 +53,28 @@ async def call_llm(prompt: str) -> str:
         "[%s] Making LLM API call with model: %s", request_id, settings.model_id
     )
 
-    def _sync_call() -> str:
-        try:
-            rsp = client.chat.completions.create(
-                model=settings.model_id,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Rispondi SOLO con un JSON valido e nient'altro.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            # Guard against None in content
-            content = (rsp.choices[0].message.content or "").strip()
-            logger.debug(
-                "[%s] LLM response received, length: %d chars", request_id, len(content)
-            )
-            return content
-        except OpenAIError as e:
-            logger.error("[%s] OpenAI API error: %s", request_id, str(e), exc_info=True)
-            raise LLMError(f"OpenAI API error: {str(e)}") from e
-        except Exception as e:
-            logger.exception("[%s] Unexpected error in LLM call", request_id)
-            raise LLMError(f"Unexpected error in LLM call: {str(e)}") from e
-
     try:
-        return await asyncio.to_thread(_sync_call)
-    except Exception:
-        logger.exception("[%s] Failed to execute LLM call in thread", request_id)
-        raise
+        rsp = await client.chat.completions.create(
+            model=settings.model_id,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Rispondi SOLO con un JSON valido e nient'altro.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        content = (rsp.choices[0].message.content or "").strip()
+        logger.debug(
+            "[%s] LLM response received, length: %d chars", request_id, len(content)
+        )
+        return content
+    except OpenAIError as e:
+        logger.error("[%s] OpenAI API error: %s", request_id, str(e), exc_info=True)
+        raise LLMError(f"OpenAI API error: {str(e)}") from e
+    except Exception as e:
+        logger.exception("[%s] Unexpected error in LLM call", request_id)
+        raise LLMError(f"Unexpected error in LLM call: {str(e)}") from e
 
 
 # ---------------------------------------------------------------

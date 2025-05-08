@@ -14,13 +14,15 @@ from sentence_transformers import SentenceTransformer
 from supabase import create_client
 from tqdm import tqdm
 
+from app.core.config import settings
+
 # --- Config -----------------------------------------------------
 dotenv.load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]  # service‑role
-REF_DIR = Path("data/reference_reports")
-EMB_MODEL_NAME = "all-MiniLM-L6-v2"
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]  # service-role
+REF_DIR = settings.ref_dir
+EMB_MODEL_NAME = settings.emb_model_name
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 model = SentenceTransformer(EMB_MODEL_NAME, device="cpu")  # CPU ok
@@ -38,7 +40,7 @@ def main() -> None:
     for file in tqdm(sorted(REF_DIR.glob("*.docx"))):
         text = extract_text(file)
         if len(text) < 100:
-            print(f"✘ Salto {file.name}: troppo corto")
+            print(f"✘ Salto {file.name}: troppo corto")
             continue
 
         emb = model.encode(text).tolist()  # → list[float]
@@ -52,7 +54,7 @@ def main() -> None:
             }
         ).execute()
 
-        print(f"✓ Indicizzato {file.name}")
+        print(f"✓ Indicizzato {file.name}")
 
 
 if __name__ == "__main__":

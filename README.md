@@ -1,1 +1,213 @@
-# bot-perito
+# Report-AI
+
+**AI-powered report generator for technical appraisals**
+
+Report-AI enables you to upload documents (PDF, DOCX, images) and generate a complete appraisal report in Word (.docx) format using a multi-step LLM pipeline and customizable template.
+
+---
+
+## Features
+
+- Extract text from PDF, DOCX, and images (OCR)
+- Optional Retrieval-Augmented Generation (RAG) of similar cases via Supabase
+- Multi-step LLM pipeline: outline → expand sections → harmonize
+- Inject generated content into a DOCX template
+- FastAPI backend with robust error handling and logging
+- Static HTML/CSS/JS frontend for easy interaction
+- Scheduled cleanup of temporary files via Vercel serverless function
+
+---
+
+## Tech Stack
+
+- **Backend**: Python 3.11, FastAPI, Starlette
+- **Document Processing**: `pdfplumber`, `python-docx`, `docxtpl`, `pytesseract`, `Pillow`
+- **LLM & Embeddings**: OpenAI / Hugging Face, `tenacity`, `httpx`, `sentence-transformers`
+- **RAG**: Supabase for vector similarity search
+- **Frontend**: Vanilla HTML, CSS, JavaScript
+- **Deployment**: Vercel (Python & Static)
+- **Linting & Formatting**: Black, isort, flake8, mypy
+
+---
+
+## Prerequisites
+
+- Python 3.11+
+- `pip`
+- Tesseract OCR (for image text extraction):
+  ```bash
+  # macOS
+  brew install tesseract
+  ```
+- (Optional) Vercel CLI for local emulation:
+  ```bash
+  npm install -g vercel
+  ```
+
+---
+
+## Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/report-ai.git
+   cd report-ai
+   ```
+
+2. **Create a virtual environment**
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**
+   Create a `.env` file in the project root and set the following:
+   ```dotenv
+   API_KEY=<your-api-key>
+   OPENROUTER_API_KEY=<optional-openrouter-key>
+   HF_API_TOKEN=<optional-huggingface-token>
+   MODEL_ID=<llm-model-identifier>
+   SUPABASE_URL=<your-supabase-url>
+   SUPABASE_ANON_KEY=<supabase-anon-key>
+   SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-key>
+   REFERENCE_DIR=app/templates/reference
+   TEMPLATE_PATH=app/templates/template.docx
+   REF_DIR=data/reference_reports
+   EMB_MODEL_NAME=all-MiniLM-L6-v2
+   ALLOW_VISION=true
+   MAX_PROMPT_CHARS=4000000
+   MAX_TOTAL_PROMPT_CHARS=4000000
+   CLEANUP_TTL=900
+   ```
+
+5. **(Optional) Index reference reports for RAG**
+   ```bash
+   python scripts/index_reference_reports.py
+   ```
+
+---
+
+## Running the Application
+
+### Local Development
+
+From the project root:
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API endpoints are available under `http://localhost:8000/api/`.
+- The static frontend is served at `http://localhost:8000/`.
+
+### Vercel Deployment
+
+The `vercel.json` configuration deploys the Python function and static assets:
+```json
+{
+  "builds": [
+    { "src": "app/main.py", "use": "@vercel/python" },
+    { "src": "frontend/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "app/main.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
+  ],
+  "functions": {
+    "api/cleanup.py": { "schedule": "@daily" }
+  }
+}
+```
+
+Deploy with:
+```bash
+vercel --prod
+```
+
+---
+
+## API Usage
+
+**Endpoint**: `POST /api/generate` (or `/generate` in local mode)
+
+**Headers**:
+- `X-API-Key`: Your `API_KEY` value
+
+**Form Data**:
+- `files`: One or more document files (`.pdf`, `.docx`, `.doc`, images)
+- `damage_imgs`: (Optional) Up to 10 damage images
+- `notes`: (Optional) Additional notes for the report
+- `use_rag`: `true` or `false` (enable similar-case retrieval)
+
+**Response**:
+- `200 OK`: Returns a `.docx` file (`report.docx`)
+- `413 Payload Too Large`: Exceeded file or prompt size limits
+- Other errors: JSON or plain text message
+
+**Example**:
+```bash
+curl -X POST http://localhost:8000/api/generate \
+  -H "X-API-Key: $API_KEY" \
+  -F "files=@injury_report.pdf" \
+  -F "notes=Include weather conditions" \
+  -F "use_rag=false" \
+  --output report.docx
+```
+
+---
+
+## Project Structure
+
+```
+report-ai/
+├── app/                    # FastAPI backend
+│   ├── api/                # REST endpoints
+│   ├── core/               # Configuration, logging, cleanup
+│   ├── services/           # Extraction, LLM pipeline, RAG, doc builder
+│   └── templates/          # DOCX template & reference files
+├── api/                    # Scheduled serverless functions (cleanup)
+├── frontend/               # Static HTML/CSS/JS frontend
+├── scripts/                # Utility scripts (e.g., index_reference_reports)
+├── data/                   # Reference reports for RAG
+├── requirements.txt        # Runtime dependencies
+├── requirements-dev.txt    # Development dependencies
+├── vercel.json             # Vercel deployment settings
+├── mypy.ini, .flake8, etc. # Linting/formatting configs
+└── README.md               # Project documentation
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a new branch (`git checkout -b feature/awesome`)
+3. Make your changes and commit (`git commit -m "Add awesome feature"`)
+4. Run linting & tests:
+   ```bash
+   pre-commit run --all-files
+   mypy app
+   flake8
+   ```
+5. Push to your branch and open a Pull Request
+
+---
+
+## License
+
+This project does not include a license file. Consider adding an open-source license (e.g., MIT, Apache 2.0) in `LICENSE`.
+
+---
+
+## Acknowledgments
+
+- Powered by FastAPI
+- Document templating by `docxtpl` and `python-docx`
+- Embeddings via `sentence-transformers`
+- RAG with Supabase vector search
+- Deployed on Vercel
