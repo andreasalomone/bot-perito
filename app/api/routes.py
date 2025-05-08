@@ -34,6 +34,7 @@ async def generate(
     files: List[UploadFile] = File(...),
     damage_imgs: List[UploadFile] = File(None),
     notes: str = Form(""),
+    use_rag: bool = Form(False),
 ):
     """
     End-point principale:
@@ -133,18 +134,25 @@ async def generate(
                 )
                 raise HTTPException(500, "Template loading failed")
 
-            # --- 2: retrieval casi simili --------------------------------
-            try:
-                rag = RAGService()
-                similar_cases = await rag.retrieve(corpus, k=3)
-                logger.info(
-                    "[%s] Retrieved %d similar cases", request_id, len(similar_cases)
-                )
-            except Exception as e:
-                logger.error(
-                    "[%s] RAG retrieval failed: %s", request_id, str(e), exc_info=True
-                )
-                raise HTTPException(500, "Failed to retrieve similar cases")
+            # --- 2: optional retrieval di casi simili (RAG) -------------
+            similar_cases: List[dict] = []
+            if use_rag:
+                try:
+                    rag = RAGService()
+                    similar_cases = await rag.retrieve(corpus, k=3)
+                    logger.info(
+                        "[%s] Retrieved %d similar cases",
+                        request_id,
+                        len(similar_cases),
+                    )
+                except Exception as e:
+                    logger.error(
+                        "[%s] RAG retrieval failed: %s",
+                        request_id,
+                        str(e),
+                        exc_info=True,
+                    )
+                    raise HTTPException(500, "Failed to retrieve similar cases")
 
             # --- 3: estrai i campi "semplici" via prompt base -------------
             try:

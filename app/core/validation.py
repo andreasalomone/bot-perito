@@ -64,10 +64,10 @@ async def validate_upload(file: UploadFile, request_id: str) -> None:
         mime = magic.from_buffer(contents, mime=True)
         expected_mime = MIME_MAPPING.get(ext)
 
-        if not expected_mime or not mime.startswith(expected_mime.split("/")[1]):
+        # Validate that detected MIME matches the expected one
+        if not expected_mime or mime != expected_mime:
             logger.warning(
-                "[%s] Rejected file with mismatched content type. "
-                "Expected: %s, Got: %s",
+                "[%s] Rejected file with mismatched content type. Expected: %s, Got: %s",
                 request_id,
                 expected_mime,
                 mime,

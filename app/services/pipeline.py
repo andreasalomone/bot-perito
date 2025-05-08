@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from app.core.embeddings import embed
 from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
-from app.services.rag import RAGService
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -21,8 +20,6 @@ class PipelineService:
 
     def __init__(self):
         logger.info("Initializing PipelineService")
-        # RAG per contesto
-        self.rag = RAGService()
         # Funzione embed (Hugging Face API) per eventuale chunking locale
         self.chunk_model = embed
 

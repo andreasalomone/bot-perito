@@ -3,6 +3,7 @@ const spinner = document.getElementById('spin');
 const fileInput = form.querySelector('input[type="file"]');
 const submitButton = form.querySelector('button[type="submit"]');
 const apiKeyInput = document.getElementById('api_key');
+const useRagInput = document.getElementById('use_rag');
 
 fileInput.addEventListener('change', () => {
   const files = fileInput.files;
@@ -19,6 +20,7 @@ form.addEventListener('submit', async (e) => {
 
   try {
     const formData = new FormData(form);
+    formData.append('use_rag', useRagInput.checked);
     const apiUrl = window.location.hostname === 'localhost'
       ? 'http://localhost:8000/generate'
       : '/api/generate';
