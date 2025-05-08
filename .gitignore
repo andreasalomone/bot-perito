@@ -41,3 +41,20 @@ ENV/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Tooling / cache
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.cache/
+.coverage
+htmlcov/
+*.log
+
+# Node.js
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Vercel output
+.vercel/

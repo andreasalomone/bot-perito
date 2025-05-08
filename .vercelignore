@@ -39,3 +39,14 @@ data/**
 
 # keep frontend static out of python lambda
 !frontend/**
+
+# Python tooling caches
+.mypy_cache/**
+.pytest_cache/**
+.ruff_cache/**
+
+# Dev scripts not needed in serverless bundle
+scripts/**
+
+# Node modules should be re-installed during build, not uploaded
+frontend/node_modules/**
