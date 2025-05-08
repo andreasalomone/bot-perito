@@ -58,3 +58,4 @@ frontend/build/
 
 # Vercel output
 .vercel/
+.env
