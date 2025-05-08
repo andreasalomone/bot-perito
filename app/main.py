@@ -28,8 +28,10 @@ async def validation_exception_handler(request, exc):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
+    allow_origins=[  # allow local dev
         "https://aiperito.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
         "https://localhost:3000",
         "https://localhost:8000",
     ],
