@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from app.core.embeddings import embed
 from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
 
 # Configure module logger
@@ -21,7 +20,7 @@ class PipelineService:
     def __init__(self):
         logger.info("Initializing PipelineService")
         # Funzione embed (Hugging Face API) per eventuale chunking locale
-        self.chunk_model = embed
+        # self.chunk_model = embed
 
     async def generate_outline(
         self,
@@ -44,6 +43,9 @@ class PipelineService:
         )
 
         try:
+            # Define the separator for similar cases to avoid backslash in f-string expression
+            similar_cases_separator = "\n\n---\n\n"
+
             # Prompt outline
             prompt = f"""
 Usa il contesto qui sotto (estratti template, documenti, casi simili, note, immagini) per
@@ -83,7 +85,7 @@ generare un **outline dettagliato e completo** della perizia, in formato JSON:
 
 ## CASI_SIMILI:
 <<<
-{"\n\n---\n\n".join(c["content_snippet"] for c in similar_cases)}
+{similar_cases_separator.join(c["content_snippet"] for c in similar_cases) if similar_cases else ""}
 >>>
 
 ## NOTE:
@@ -131,7 +133,7 @@ generare un **outline dettagliato e completo** della perizia, in formato JSON:
         context include template_excerpt, corpus, notes, images, similar_cases, e outline completo.
         """
         request_id = str(uuid4())
-        sec = section["section"]
+        sec_key = section["section"]
         title = section["title"]
         bullets = section["bullets"]
 
@@ -143,8 +145,12 @@ generare un **outline dettagliato e completo** della perizia, in formato JSON:
         )
 
         try:
+            current_extra_styles = context.get("extra_styles", "")
+            # Define the separator for similar cases to avoid backslash in f-string expression
+            similar_cases_separator = "\n\n---\n\n"
+
             prompt = f"""
-Scrivi la sezione **{title}** (key="{sec}") della perizia, basandoti su:
+Scrivi la sezione **{title}** (key="{sec_key}") della perizia, basandoti su:
 - CONTEXTO perizio (template, documenti, casi simili, note)
 - Outline bullets: {bullets}
 
@@ -154,31 +160,37 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
                 "accertamenti": "Quali prove fotografiche e rilievi del danno sono stati eseguiti? Chi, dove e quando?",
                 "quantificazione": "Dettaglia costi totali del danno come lista puntata o tabella testo.",
                 "commento": "Fornisci una sintesi tecnica finale e le raccomandazioni."
-            }.get(sec, ""))}
+            }.get(sec_key, ""))}
 
-## CONTEXTO:
+## CONTEXTO PERIZIALE (DOCUMENTI FORNITI):
 <<<
 {context["corpus"]}
 >>>
 
-## TEMPLATE EXCERPT:
+## TEMPLATE EXCERPT (per struttura e terminologia generale):
 <<<
 {context["template_excerpt"]}
 >>>
 
-## CASI_SIMILI:
+## CASI_SIMILI (per riferimento stilistico e informazioni specifiche se pertinenti):
 <<<
-{"\n\n---\n\n".join(context["similar"])}
+{similar_cases_separator.join(context.get("similar", []))}
 >>>
 
-## NOTE:
+## NOTE AGGIUNTIVE FORNITE:
 {context["notes"]}
 
-❗ Restituisci JSON: {{ "{sec}": "<testo completo>" }}
+## ESEMPIO DI STILE (USA QUESTO PER GUIDARE IL TONO, LA STRUTTURA DELLE FRASI E LA TERMINOLOGIA SPECIFICA):
+<<<
+{current_extra_styles}
+>>>
+
+❗ Restituisci JSON: {{ "{sec_key}": "<testo completo della sezione {title}>" }}
+No talk, just go. Assicurati che il testo sia dettagliato e professionale, seguendo lo stile indicato.
 """
             raw = await call_llm(prompt)
             out = extract_json(raw)
-            content = out.get(sec, "")
+            content = out.get(sec_key, "")
 
             if not content:
                 logger.error(
@@ -211,7 +223,9 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
             )
             raise PipelineError(f"Unexpected error expanding section {title}") from e
 
-    async def harmonize(self, sections: Dict[str, str]) -> str:
+    async def harmonize(
+        self, sections: Dict[str, str], extra_styles: str
+    ) -> Dict[str, str]:
         """
         Step 3: unisci e uniforma lo stile.
         """
@@ -219,36 +233,66 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
         logger.info("[%s] Harmonizing %d sections", request_id, len(sections))
 
         try:
-            prompt = f"""
-Unisci le seguenti sezioni di perizia in un unico testo coeso,
-uniforma tono e stile, correggi errori e ripetizioni:
+            escaped_double_quote = '\\"'  # This is the string: \"
+            # Define the joiner string separately to satisfy Black's AST parser
+            section_joiner = "\n\n"
+            sections_input_for_prompt = section_joiner.join(
+                f'"{k}": """{v.replace("\"", escaped_double_quote)}"""'
+                for k, v in sections.items()
+            )
 
+            prompt = f"""
+Data la seguente bozza di sezioni di una perizia e un esempio di stile, rivedi e armonizza ciascuna sezione per garantire coerenza di tono, stile, terminologia e fluidità. Correggi eventuali errori o ripetizioni.
+Assicurati che ogni sezione mantenga il suo focus originale ma sia migliorata stilisticamente in base all'esempio fornito.
+
+BOZZA SEZIONI DA ARMONIZZARE:
+{{{{{sections_input_for_prompt}}}}}
+
+ESEMPIO DI STILE DA APPLICARE (PER TONO, LUNGHEZZA FRASI, TERMINOLOGIA):
 <<<
-{"".join(f"## {k}\n{v}\n\n" for k, v in sections.items())}
+{extra_styles}
 >>>
 
-❗ Restituisci SOLO il TESTO finale, senza JSON né commenti. No talk, just go.
+❗ Restituisci ESCLUSIVAMENTE un JSON valido contenente le versioni armonizzate di TUTTE le sezioni originali, usando le stesse chiavi.
+Ad esempio:
+{{
+  "dinamica_eventi": "<testo armonizzato per dinamica_eventi>",
+  "accertamenti": "<testo armonizzato per accertamenti>",
+  "quantificazione": "<testo armonizzato per quantificazione>",
+  "commento": "<testo armonizzato per commento>"
+}}
+Non aggiungere testo al di fuori del JSON.
 """
-            raw = await call_llm(prompt)
-            result = raw.strip()
+            raw_response = await call_llm(prompt)
+            harmonized_data = extract_json(raw_response)
 
-            if not result:
-                logger.error("[%s] Empty result from harmonization", request_id)
-                raise PipelineError("Empty harmonization result")
+            if not isinstance(harmonized_data, dict) or not all(
+                key in harmonized_data for key in sections.keys()
+            ):
+                logger.error(
+                    "[%s] Invalid or incomplete harmonization result: %s",
+                    request_id,
+                    harmonized_data,
+                )
+                raise PipelineError(
+                    "Harmonization returned invalid structure or missed sections."
+                )
 
             logger.info(
-                "[%s] Successfully harmonized text to %d chars", request_id, len(result)
+                "[%s] Successfully harmonized sections. Keys: %s",
+                request_id,
+                list(harmonized_data.keys()),
             )
-            return result
+            return harmonized_data
 
-        except LLMError as e:
+        except (LLMError, JSONParsingError) as e:
             logger.error(
-                "[%s] Failed to harmonize sections: %s",
+                "[%s] Failed to harmonize sections due to LLM/JSON error: %s",
                 request_id,
                 str(e),
                 exc_info=True,
             )
-            raise PipelineError("Failed to harmonize sections") from e
+            raise PipelineError(f"Failed to harmonize sections: {str(e)}") from e
         except PipelineError:
             raise
         except Exception as e:
@@ -262,6 +306,7 @@ uniforma tono e stile, correggi errori e ripetizioni:
         imgs: List[str],
         notes: str,
         similar: List[Dict[str, Any]],
+        extra_styles: str,
     ) -> Dict[str, str]:
         request_id = str(uuid4())
         logger.info(
@@ -276,30 +321,26 @@ uniforma tono e stile, correggi errori e ripetizioni:
 
             # 2. Context dictionary
             context = {
-                "corpus": template_excerpt + "\n\n" + corpus,
+                "corpus": corpus,
                 "template_excerpt": template_excerpt,
-                "similar": similar,
+                "similar": [case["content_snippet"] for case in similar],
                 "notes": notes,
+                "extra_styles": extra_styles,
             }
 
             # 3. Espandi sezioni
             sections = {}
-            for sec in outline:
-                text = await self.expand_section(sec, context)
-                sections[sec["section"]] = text
+            for sec_outline_item in outline:
+                text = await self.expand_section(sec_outline_item, context)
+                sections[sec_outline_item["section"]] = text
 
             # 4. Armonizza
-            await self.harmonize(sections)
+            harmonized_sections_dict = await self.harmonize(sections, extra_styles)
 
             logger.info("[%s] Pipeline completed successfully", request_id)
 
             # 5. Restituisci mappa per doc_builder
-            return {
-                "dinamica_eventi": sections.get("dinamica_eventi", ""),
-                "accertamenti": sections.get("accertamenti", ""),
-                "quantificazione": sections.get("quantificazione", ""),
-                "commento": sections.get("commento", ""),
-            }
+            return harmonized_sections_dict
 
         except PipelineError:
             raise

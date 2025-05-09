@@ -101,25 +101,28 @@ async def test_expand_section_json_error(monkeypatch):
 async def test_harmonize_success(monkeypatch):
     monkeypatch.setattr(
         "app.services.pipeline.call_llm",
-        AsyncMock(return_value=" unified text "),
+        AsyncMock(return_value='{"a": "unified text a", "b": "unified text b"}'),
         raising=False,
     )
     service = PipelineService()
-    result = await service.harmonize({"a": "1", "b": "2"})
-    assert result == "unified text"
+    result = await service.harmonize({"a": "1", "b": "2"}, extra_styles="dummy_style")
+    assert isinstance(result, dict)
+    assert result.get("a") == "unified text a"
 
 
 @pytest.mark.asyncio
 async def test_harmonize_empty(monkeypatch):
     monkeypatch.setattr(
         "app.services.pipeline.call_llm",
-        AsyncMock(return_value=""),
+        AsyncMock(return_value="{}"),
         raising=False,
     )
     service = PipelineService()
     with pytest.raises(PipelineError) as exc:
-        await service.harmonize({"a": "1"})
-    assert "Empty harmonization result" in str(exc.value)
+        await service.harmonize({"a": "1"}, extra_styles="dummy_style")
+    assert "Harmonization returned invalid structure or missed sections." in str(
+        exc.value
+    )
 
 
 @pytest.mark.asyncio
@@ -131,5 +134,5 @@ async def test_harmonize_api_error(monkeypatch):
     )
     service = PipelineService()
     with pytest.raises(PipelineError) as exc:
-        await service.harmonize({"a": "1"})
+        await service.harmonize({"a": "1"}, extra_styles="dummy_style")
     assert "Failed to harmonize sections" in str(exc.value)
