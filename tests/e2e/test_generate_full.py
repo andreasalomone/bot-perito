@@ -73,7 +73,7 @@ def test_generate_full_happy_path(monkeypatch):
     # Use actual extract_json or stub if necessary
     # Stub pipeline service
     class FakePipeline:
-        async def run(self, tpl, corpus, imgs, notes, similar_cases):
+        async def run(self, tpl, corpus, imgs, notes, similar_cases, extra_styles):
             return {
                 "dinamica_eventi": "dyn",
                 "accertamenti": "acc",

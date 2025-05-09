@@ -16,7 +16,7 @@ def test_cleanup_tmp(monkeypatch):
             return type("stat", (), {"st_mtime": self._mtime})()
 
     old_item = DummyItem(mtime=0)
-    new_item = DummyItem(mtime=1000)
+    new_item = DummyItem(mtime=1400)
 
     # Monkeypatch time.time to fixed value
     monkeypatch.setattr(time, "time", lambda: 1500)

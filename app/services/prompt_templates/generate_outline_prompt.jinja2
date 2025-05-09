@@ -1,0 +1,47 @@
+Usa il contesto qui sotto (estratti template, documenti, casi simili, note, immagini) per
+generare un **outline dettagliato e completo** della perizia, in formato JSON:
+[
+  {
+    "section": "dinamica_eventi",
+    "title": "Dinamica Evento",
+    "bullets": ["punto 1", "punto 2", ...]
+  },
+  {
+    "section": "accertamenti",
+    "title": "Accertamenti Peritali",
+    "bullets": ["punto 1", ...]
+  },
+  {
+    "section": "quantificazione",
+    "title": "Quantificazione Danno",
+    "bullets": ["punto 1", ...]
+  },
+  {
+    "section": "commento",
+    "title": "Commento Finale",
+    "bullets": ["punto 1", ...]
+  }
+]
+
+## TEMPLATE:
+<<<
+{{ template_excerpt }}
+>>>
+
+## DOCUMENTI:
+<<<
+{{ corpus }}
+>>>
+
+## CASI_SIMILI:
+<<<
+{% if similar_cases_str %}{{ similar_cases_str }}{% else %}{% endif %}
+>>>
+
+## NOTE:
+{{ notes }}
+
+## IMMAGINI (base64):
+{{ images_str }}
+
+❗ Ogni sezione almeno 3 punti. Nessun testo al di fuori del JSON. No talk, just go.

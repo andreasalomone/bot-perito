@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
 from typing import Any, Dict, List
 from uuid import uuid4
+
+import jinja2
 
 from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# Initialize Jinja2 environment
+PROMPT_DIR = pathlib.Path(__file__).parent / "prompt_templates"
+loader = jinja2.FileSystemLoader(PROMPT_DIR)
+env = jinja2.Environment(loader=loader)
 
 
 class PipelineError(Exception):
@@ -45,57 +54,24 @@ class PipelineService:
         try:
             # Define the separator for similar cases to avoid backslash in f-string expression
             similar_cases_separator = "\n\n---\n\n"
+            similar_cases_str = (
+                similar_cases_separator.join(
+                    c["content_snippet"] for c in similar_cases
+                )
+                if similar_cases
+                else ""
+            )
+            images_str = "; ".join(f"IMG{i + 1}" for i in range(len(images)))
 
-            # Prompt outline
-            prompt = f"""
-Usa il contesto qui sotto (estratti template, documenti, casi simili, note, immagini) per
-generare un **outline dettagliato e completo** della perizia, in formato JSON:
-[
-  {{
-    "section": "dinamica_eventi",
-    "title": "Dinamica Evento",
-    "bullets": ["punto 1", "punto 2", ...]
-  }},
-  {{
-    "section": "accertamenti",
-    "title": "Accertamenti Peritali",
-    "bullets": ["punto 1", ...]
-  }},
-  {{
-    "section": "quantificazione",
-    "title": "Quantificazione Danno",
-    "bullets": ["punto 1", ...]
-  }},
-  {{
-    "section": "commento",
-    "title": "Commento Finale",
-    "bullets": ["punto 1", ...]
-  }}
-]
-
-## TEMPLATE:
-<<<
-{template_excerpt}
->>>
-
-## DOCUMENTI:
-<<<
-{corpus}
->>>
-
-## CASI_SIMILI:
-<<<
-{similar_cases_separator.join(c["content_snippet"] for c in similar_cases) if similar_cases else ""}
->>>
-
-## NOTE:
-{notes}
-
-## IMMAGINI (base64):
-{" ; ".join(f"IMG{i + 1}" for i in range(len(images)))}
-
-❗ Ogni sezione almeno 3 punti. Nessun testo al di fuori del JSON. No talk, just go.
-"""
+            # Load and render prompt template
+            template = env.get_template("generate_outline_prompt.jinja2")
+            prompt = template.render(
+                template_excerpt=template_excerpt,
+                corpus=corpus,
+                similar_cases_str=similar_cases_str,
+                notes=notes,
+                images_str=images_str,
+            )
             raw = await call_llm(prompt)
             data = extract_json(raw)
 
@@ -148,46 +124,30 @@ generare un **outline dettagliato e completo** della perizia, in formato JSON:
             current_extra_styles = context.get("extra_styles", "")
             # Define the separator for similar cases to avoid backslash in f-string expression
             similar_cases_separator = "\n\n---\n\n"
+            similar_cases_str = similar_cases_separator.join(context.get("similar", []))
 
-            prompt = f"""
-Scrivi la sezione **{title}** (key="{sec_key}") della perizia, basandoti su:
-- CONTEXTO perizio (template, documenti, casi simili, note)
-- Outline bullets: {bullets}
-
-Deve essere almeno 300 parole, rispondendo a tutte queste domande:
-{" e ".join({
+            section_questions = {
                 "dinamica_eventi": "Chi, cosa, quando, dove e perché è avvenuto il sinistro?",
                 "accertamenti": "Quali prove fotografiche e rilievi del danno sono stati eseguiti? Chi, dove e quando?",
                 "quantificazione": "Dettaglia costi totali del danno come lista puntata o tabella testo.",
-                "commento": "Fornisci una sintesi tecnica finale e le raccomandazioni."
-            }.get(sec_key, ""))}
+                "commento": "Fornisci una sintesi tecnica finale e le raccomandazioni.",
+            }
+            section_question = " e ".join(section_questions.get(sec_key, ""))
 
-## CONTEXTO PERIZIALE (DOCUMENTI FORNITI):
-<<<
-{context["corpus"]}
->>>
+            # Load and render prompt template
+            template = env.get_template("expand_section_prompt.jinja2")
+            prompt = template.render(
+                title=title,
+                sec_key=sec_key,
+                bullets=str(bullets),
+                section_question=section_question,
+                corpus=context["corpus"],
+                template_excerpt=context["template_excerpt"],
+                similar_cases_str=similar_cases_str,
+                notes=context["notes"],
+                current_extra_styles=current_extra_styles,
+            )
 
-## TEMPLATE EXCERPT (per struttura e terminologia generale):
-<<<
-{context["template_excerpt"]}
->>>
-
-## CASI_SIMILI (per riferimento stilistico e informazioni specifiche se pertinenti):
-<<<
-{similar_cases_separator.join(context.get("similar", []))}
->>>
-
-## NOTE AGGIUNTIVE FORNITE:
-{context["notes"]}
-
-## ESEMPIO DI STILE (USA QUESTO PER GUIDARE IL TONO, LA STRUTTURA DELLE FRASI E LA TERMINOLOGIA SPECIFICA):
-<<<
-{current_extra_styles}
->>>
-
-❗ Restituisci JSON: {{ "{sec_key}": "<testo completo della sezione {title}>" }}
-No talk, just go. Assicurati che il testo sia dettagliato e professionale, seguendo lo stile indicato.
-"""
             raw = await call_llm(prompt)
             out = extract_json(raw)
             content = out.get(sec_key, "")
@@ -233,36 +193,20 @@ No talk, just go. Assicurati che il testo sia dettagliato e professionale, segue
         logger.info("[%s] Harmonizing %d sections", request_id, len(sections))
 
         try:
-            escaped_double_quote = '\\"'  # This is the string: \"
             # Define the joiner string separately to satisfy Black's AST parser
-            section_joiner = "\n\n"
+            section_joiner = "\\n\\n"
             sections_input_for_prompt = section_joiner.join(
-                f'"{k}": """{v.replace("\"", escaped_double_quote)}"""'
+                f'\\"{k}\\": \\"\\"\\"{json.dumps(v)[1:-1]}\\"\\"\\"'
                 for k, v in sections.items()
             )
 
-            prompt = f"""
-Data la seguente bozza di sezioni di una perizia e un esempio di stile, rivedi e armonizza ciascuna sezione per garantire coerenza di tono, stile, terminologia e fluidità. Correggi eventuali errori o ripetizioni.
-Assicurati che ogni sezione mantenga il suo focus originale ma sia migliorata stilisticamente in base all'esempio fornito.
+            # Load and render prompt template
+            template = env.get_template("harmonize_prompt.jinja2")
+            prompt = template.render(
+                sections_input_for_prompt=sections_input_for_prompt,
+                extra_styles_example=extra_styles,
+            )
 
-BOZZA SEZIONI DA ARMONIZZARE:
-{{{{{sections_input_for_prompt}}}}}
-
-ESEMPIO DI STILE DA APPLICARE (PER TONO, LUNGHEZZA FRASI, TERMINOLOGIA):
-<<<
-{extra_styles}
->>>
-
-❗ Restituisci ESCLUSIVAMENTE un JSON valido contenente le versioni armonizzate di TUTTE le sezioni originali, usando le stesse chiavi.
-Ad esempio:
-{{
-  "dinamica_eventi": "<testo armonizzato per dinamica_eventi>",
-  "accertamenti": "<testo armonizzato per accertamenti>",
-  "quantificazione": "<testo armonizzato per quantificazione>",
-  "commento": "<testo armonizzato per commento>"
-}}
-Non aggiungere testo al di fuori del JSON.
-"""
             raw_response = await call_llm(prompt)
             harmonized_data = extract_json(raw_response)
 

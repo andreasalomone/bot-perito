@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import logging
@@ -36,71 +37,119 @@ router = APIRouter()
 
 
 # Add helper functions for text and image extraction
+async def _extract_single_file(
+    file: UploadFile, request_id: str
+) -> Tuple[str | None, str | None]:
+    try:
+        txt, tok = extract(file.filename or "", file.file)
+        logger.debug(
+            "[%s] Extracted from %s: text=%d chars, has_image=%s",
+            request_id,
+            file.filename,
+            len(txt) if txt else 0,
+            bool(tok),
+        )
+        return txt, tok
+    except ExtractorError as e:
+        logger.error(
+            "[%s] Extraction error from %s: %s",
+            request_id,
+            file.filename,
+            str(e),
+            exc_info=True,
+        )
+        # Propagate the error to be handled by the gather call
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            "[%s] Failed to extract from %s: %s",
+            request_id,
+            file.filename,
+            str(e),
+            exc_info=True,
+        )
+        # Propagate the error to be handled by the gather call
+        raise HTTPException(
+            status_code=400, detail=f"Failed to process file {file.filename}"
+        )
+
+
 async def extract_texts(
     files: List[UploadFile], request_id: str
 ) -> Tuple[List[str], List[str]]:
+    tasks = [_extract_single_file(f, request_id) for f in files]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     texts: List[str] = []
     imgs: List[str] = []
-    for f in files:
-        try:
-            txt, tok = extract(f.filename or "", f.file)
-            if txt:
-                texts.append(txt)
-            if tok:
-                imgs.append(tok)
-            logger.debug(
-                "[%s] Extracted from %s: text=%d chars, has_image=%s",
-                request_id,
-                f.filename,
-                len(txt) if txt else 0,
-                bool(tok),
+
+    for result in results:
+        if isinstance(result, Exception):
+            # If it's an HTTPException, re-raise it directly
+            if isinstance(result, HTTPException):
+                raise result
+            # For other exceptions, wrap them in a generic HTTPException or handle as appropriate
+            raise HTTPException(
+                status_code=500,
+                detail=f"An unexpected error occurred during file extraction: {str(result)}",
             )
-        except ExtractorError as e:
-            logger.error(
-                "[%s] Extraction error from %s: %s",
-                request_id,
-                f.filename,
-                str(e),
-                exc_info=True,
-            )
-            raise HTTPException(400, str(e))
-        except Exception as e:
-            logger.error(
-                "[%s] Failed to extract from %s: %s",
-                request_id,
-                f.filename,
-                str(e),
-                exc_info=True,
-            )
-            raise HTTPException(400, f"Failed to process file {f.filename}")
+
+        txt, tok = result
+        if txt:
+            texts.append(txt)
+        if tok:
+            imgs.append(tok)
+
     return texts, imgs
 
 
+async def _process_single_image(damage_img: UploadFile, request_id: str) -> str:
+    try:
+        _, tok = extract_damage_image(damage_img.file)
+        logger.debug(
+            "[%s] Extracted damage image from %s", request_id, damage_img.filename
+        )
+        return tok
+    except ExtractorError as e:
+        logger.error(
+            "[%s] Extraction error for damage image %s: %s",
+            request_id,
+            damage_img.filename,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            "[%s] Failed to extract damage image from %s: %s",
+            request_id,
+            damage_img.filename,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to process damage image {damage_img.filename}",
+        )
+
+
 async def process_images(damage_imgs: List[UploadFile], request_id: str) -> List[str]:
+    if not damage_imgs:
+        return []
+    tasks = [_process_single_image(p, request_id) for p in damage_imgs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     imgs: List[str] = []
-    for p in damage_imgs:
-        try:
-            _, tok = extract_damage_image(p.file)
-            imgs.append(tok)
-            logger.debug("[%s] Extracted damage image from %s", request_id, p.filename)
-        except ExtractorError as e:
-            logger.error(
-                "[%s] Extraction error for damage image %s: %s",
-                request_id,
-                p.filename,
-                str(e),
-                exc_info=True,
+    for result in results:
+        if isinstance(result, Exception):
+            if isinstance(result, HTTPException):
+                raise result
+            raise HTTPException(
+                status_code=500,
+                detail=f"An unexpected error occurred during image processing: {str(result)}",
             )
-            raise HTTPException(400, str(e))
-        except Exception as e:
-            logger.error(
-                "[%s] Failed to extract damage image from %s: %s",
-                request_id,
-                p.filename,
-                str(e),
-                exc_info=True,
-            )
-            raise HTTPException(400, f"Failed to process damage image {p.filename}")
+        imgs.append(result)
+
     return imgs
 
 
@@ -231,7 +280,12 @@ async def generate(
             try:
                 pipeline = PipelineService()
                 section_map = await pipeline.run(
-                    template_excerpt, corpus, imgs, notes, similar_cases
+                    template_excerpt,
+                    corpus,
+                    imgs,
+                    notes,
+                    similar_cases,
+                    extra_styles="",
                 )
                 logger.info(
                     "[%s] Pipeline processing completed successfully", request_id

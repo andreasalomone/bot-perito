@@ -1,0 +1,18 @@
+Data la seguente bozza di sezioni di una perizia e un esempio di stile, rivedi e armonizza ciascuna sezione per garantire coerenza di tono, stile, terminologia e fluidità. Correggi eventuali errori o ripetizioni.
+Assicurati che ogni sezione mantenga il suo focus originale ma sia migliorata stilisticamente in base all'esempio fornito.
+
+BOZZA SEZIONI DA ARMONIZZARE:
+{{ '{' }}{{ sections_input_for_prompt }}{{ '}' }}
+
+ESEMPIO DI STILE (PER GUIDARE LA REVISIONE):
+<<<
+{% if extra_styles_example %}{{ extra_styles_example }}{% else %}(Nessun esempio di stile fornito){% endif %}
+>>>
+
+❗ Restituisci ESCLUSIVAMENTE un JSON valido con le sezioni armonizzate, mantenendo le stesse chiavi dell'input. Ad esempio:
+{{ '{' }}
+  "dinamica_eventi": "<testo armonizzato per dinamica eventi>",
+  "accertamenti": "<testo armonizzato per accertamenti>",
+  ...
+{{ '}' }}
+No talk, just go.

@@ -62,3 +62,7 @@ frontend/build/
 
 # Test Fixtures
 /tests/fixtures/
+
+# Cursor Rules
+.cursorrules
+/.cursor/rules

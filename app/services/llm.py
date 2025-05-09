@@ -1,8 +1,10 @@
 import json
 import logging
+import pathlib
 import re
 from uuid import uuid4
 
+import jinja2
 from openai import AsyncOpenAI, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -120,6 +122,13 @@ def extract_json(text: str) -> dict:
 # ---------------------------------------------------------------
 # Prompt builder (unchanged)
 # ---------------------------------------------------------------
+
+# Initialize Jinja2 environment
+PROMPT_DIR = pathlib.Path(__file__).parent / "prompt_templates"
+loader = jinja2.FileSystemLoader(PROMPT_DIR)
+env = jinja2.Environment(loader=loader)
+
+
 def build_prompt(
     template_excerpt: str,
     corpus: str,
@@ -134,11 +143,12 @@ def build_prompt(
     """
 
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------
-    extra_styles = load_style_samples()
-    if extra_styles:
+    extra_styles_content = load_style_samples()
+    extra_styles = ""
+    if extra_styles_content:
         extra_styles = (
             "\n\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\n<<<\n"
-            f"{extra_styles}\n>>>"
+            f"{extra_styles_content}\n>>>"
         )
 
     # --- eventuali immagini -------------------------------------------------
@@ -157,116 +167,15 @@ def build_prompt(
             f"{joined}\n>>>"
         )
 
-    # --- prompt finale ------------------------------------------------------
+    # --- carica e renderizza template Jinja2 ----------------------------------
+    template = env.get_template("build_prompt.jinja2")
+    prompt_content = template.render(
+        template_excerpt=template_excerpt,
+        extra_styles=extra_styles,
+        corpus=corpus,
+        notes=notes,
+        img_block=img_block,
+        cases_block=cases_block,
+    )
 
-    base_prompt = f"""
-
-Sei un perito assicurativo italiano della Salomone e Associati, abituato a scrivere perizie tecniche più lunghe e dettagliate possibili, ai clienti piace così.
-Analizza i documenti e restituisci ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
-
-## Definizione chiavi
-| chiave JSON       | tag DOCX                | contenuto richiesto                                   |
-|-------------------|-------------------------|-------------------------------------------------------|
-| client            | CLIENT                  | Ragione sociale cliente                               |
-| client_address1   | CLIENTADDRESS1          | Via/Piazza + numero indirizzo cliente                 |
-| client_address2   | CLIENTADDRESS2          | CAP + città cliente                                   |
-| date              | DATE                    | Data di oggi (GG/MM/AAAA)                             |
-| vs_rif            | VSRIF                   | Riferimento del sinistro (del cliente)                                   |
-| rif_broker        | RIFBROKER               | Riferimento del sinistro (del broker)                                     |
-| polizza           | POLIZZA                 | Numero polizza assicurativa                                       |
-| ns_rif            | NSRIF                   | Riferimento del sinistro (interno, perito della Salomone e Associati)                           |
-| assicurato        | ASSICURATO              | Ragione sociale dell'assicurato                                  |
-| indirizzo_ass1    | INDIRIZZOASSICURATO1    | Via/Piazza dell'indirizzo dell'assicurato                                  |
-| indirizzo_ass2    | INDIRIZZOASSICURATO2    | CAP + città dell'indirizzo dell'assicurato                                 |
-| luogo             | LUOGO                   | Luogo in cui è accaduto ilsinistro                                         |
-| data_danno        | DATADANNO               | Data del sinistro                                          |
-| cause             | CAUSE                   | Causa presunta del sinistro (oggetto di perizia)                                       |
-| data_incarico     | DATAINCARICO            | Data in cui è stato incaricato il perito dal cliente                                |
-| merce             | MERCE                   | Tipo merce sinistrata                                             |
-| peso_merce        | PESOMERCE               | Peso complessivo in kg della merce sinistrata                                |
-| valore_merce      | VALOREMERCE             | Valore in € della merce sinistrata                    |
-| data_intervento   | DATAINTERVENTO          | Data del sopralluogo sul luogo del sinistro da parte del perito della Salomone e Associati                                       |
-| dinamica_eventi   | DINAMICA_EVENTI         | Sez. 2a – descrivi **solo** la dinamica del sinistro, chi, come, dove, quando, perché è avvenuto — **senza titolo** –                         |
-| accertamenti      | ACCERTAMENTI            | Sez. 2b – descrivi gli accertamenti peritali eseguiti, dove, quando, come, con chi, con chi è stato incaricato, con chi è stato coinvolto, le scoperte peritali degli accertamenti — **senza titolo** –                         |
-| quantificazione   | QUANTIFICAZIONE         | Sez. 3 – quantificazione del danno totale, le cifre come lista puntata o tabella testo, in stile esempio) — **senza titolo**                        |
-| commento          | COMMENTO                | Sez. 4 – sintesi tecnica finale, come da esempio — **senza titolo**                        |
-| allegati          | ALLEGATI                | Elenco allegati in bullet list uno sopra l'altro, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
-
-                       **senza** intestazione Spett.le ecc.
-
-Se un valore non è rintracciabile, restituisci stringa vuota "".
-
-## Formato di output (rispettare ordine e maiusc/minusc delle chiavi)
-{{
-  "client": "",
-  "client_address1": "",
-  "client_address2": "",
-  "date": "",
-  "vs_rif": "",
-  "rif_broker": "",
-  "polizza": "",
-  "ns_rif": "",
-  "assicurato": "",
-  "indirizzo_ass1": "",
-  "indirizzo_ass2": "",
-  "luogo": "",
-  "data_danno": "",
-  "cause": "",
-  "data_incarico": "",
-  "merce": "",
-  "peso_merce": "",
-  "valore_merce": "",
-  "data_intervento": "",
-  "dinamica_eventi": "",
-  "accertamenti": "",
-  "quantificazione": "",
-  "commento": "",
-  "allegati": ""
-}}
-
-❗ Regole:
-1. NIENTE markdown fuori dai campi specificati, html o commenti: solo JSON puro.
-2. Scarta testo ridondante; mantieni nel campo "body" i paragrafi con
-   numerazione, elenchi puntati, grassetti in **asterischi** se servono.
-3. Non aggiungere campi extra. Non cambiare i nomi chiave.
-4. Analizza con attenzione e con occhio peritale
-   le immagini nel blocco FOTO_DANNI_BASE64 e integra la causa
-   probabile dei danni nella sezione «2 – QUANTIFICAZIONE DEI DANNI».
-5. Per le chiavi "dinamica_eventi", "accertamenti", "quantificazione", "commento"
-   scrivi solo il contenuto (i titoli sono già nel template).
-   Ognuna di queste 4 sezioni deve contenere almeno 200 parole.
-6. Separa tutti i paragrafi con UNA riga bianca (\n\n).
-
-RISPOSTA OBBLIGATORIA:
-Restituisci SOLO il JSON, senza testo extra prima o dopo. No talk, just go.
-
-### Sezioni testuali da costruire
-**dinamica_eventi**
-Spiega **solo** l'evento del sinistro rispondendo alle domande: chi, come, dove, quando, perché è avvenuto.
-
-**accertamenti**
-Descrivi **solo** gli accertamenti peritali: sopralluogo, rilievi, danni osservati.
-
-**quantificazione**
-Riporta le cifre come lista puntata o tabella testo, in stile esempio.
-Intestazione già presente nel template e che non devi ripetere: `**3 – QUANTIFICAZIONE DEL DANNO**`.
-
-**commento**
-Sintesi tecnica finale. Intestazione già presente nel template e che non devi ripetere: `**4 – COMMENTO FINALE**`.
-
-## Template di riferimento (tono & terminologia):
-<<<
-{template_excerpt}
->>>{extra_styles}
-
-## Documentazione utente:
-<<<
-{corpus}
->>>
-
-## Note extra:
-{notes}{img_block}
-"""
-
-    # --- prompt finale con blocco RAG ------------------------------------
-    return f"{base_prompt}{cases_block}"
+    return prompt_content

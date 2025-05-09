@@ -1,0 +1,32 @@
+Scrivi la sezione **{{ title }}** (key="{{ sec_key }}") della perizia, basandoti su:
+- CONTEXTO perizio (template, documenti, casi simili, note)
+- Outline bullets: {{ bullets }}
+
+Deve essere almeno 300 parole, rispondendo a tutte queste domande:
+{{ section_question }}
+
+## CONTEXTO PERIZIALE (DOCUMENTI FORNITI):
+<<<
+{{ corpus }}
+>>>
+
+## TEMPLATE EXCERPT (per struttura e terminologia generale):
+<<<
+{{ template_excerpt }}
+>>>
+
+## CASI_SIMILI (per riferimento stilistico e informazioni specifiche se pertinenti):
+<<<
+{% if similar_cases_str %}{{ similar_cases_str }}{% else %}{% endif %}
+>>>
+
+## NOTE AGGIUNTIVE FORNITE:
+{{ notes }}
+
+## ESEMPIO DI STILE (USA QUESTO PER GUIDARE IL TONO, LA STRUTTURA DELLE FRASI E LA TERMINOLOGIA SPECIFICA):
+<<<
+{% if current_extra_styles %}{{ current_extra_styles }}{% else %}{% endif %}
+>>>
+
+❗ Restituisci JSON: {{ '{{ "' }}{{ sec_key }}{{ '": "<' }}testo completo della sezione {{ title }}>{{ '" }}' }}
+No talk, just go. Assicurati che il testo sia dettagliato e professionale, seguendo lo stile indicato.
