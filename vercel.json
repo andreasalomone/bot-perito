@@ -7,12 +7,13 @@
     ],
 
     "routes": [
+      { "src": "/api/cleanup", "dest": "api/cleanup.py" },
       { "src": "/api/(.*)", "dest": "app/main.py" },
       { "handle": "filesystem" },
       { "src": "/(.*)",        "dest": "/frontend/$1" }
     ],
 
-    "functions": {
-      "api/cleanup.py": { "schedule": "@daily" }
-    }
+    "crons": [
+      { "path": "/api/cleanup", "schedule": "@daily" }
+    ]
   }
