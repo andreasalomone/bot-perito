@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     emb_model_name: str = Field("all-MiniLM-L6-v2", env="EMB_MODEL_NAME")
     api_key: str | None = Field(None, env="API_KEY")
 
-    model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}  # type: ignore[typeddict-unknown-key]
+    model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
 
 
 settings = Settings()  # type: ignore[call-arg]

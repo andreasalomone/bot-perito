@@ -7,15 +7,12 @@ from typing import Dict, List
 from uuid import uuid4
 
 import async_lru
-import dotenv
 from supabase import create_client
 
 from app.core.embeddings import embed
 
 # Configure module logger
 logger = logging.getLogger(__name__)
-
-dotenv.load_dotenv()
 
 
 class RAGError(Exception):
@@ -35,22 +32,17 @@ class RAGService:
         return cls._instance
 
     def _init(self):
+        # Load environment variables for Supabase
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_ANON_KEY")
+        if not url or not key:
+            logger.error("Missing Supabase environment variables")
+            raise RAGError("Missing required environment variables")
         try:
-            url = os.environ["SUPABASE_URL"]
-            key = os.environ["SUPABASE_ANON_KEY"]  # solo lettura
-
-            if not url or not key:
-                logger.error("Missing Supabase environment variables")
-                raise RAGError("Missing required environment variables")
-
             logger.info("Initializing Supabase client")
             self.sb = create_client(url, key)
-
-            # No local embedding model; will call external API via embed()
-
         except Exception as e:
-            logger.exception("Failed to initialize RAGService")
-            # Set default values to prevent attribute errors
+            logger.exception("Failed to initialize Supabase client")
             self.sb = None
             raise RAGError("Failed to initialize RAG service") from e
 

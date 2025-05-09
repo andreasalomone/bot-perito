@@ -161,6 +161,61 @@ curl -X POST http://localhost:8000/api/generate \
 
 ---
 
+## Testing
+
+### Unit Tests
+
+Run all unit tests with:
+```bash
+pytest --maxfail=1 --disable-warnings -v
+```
+
+### Test Fixtures
+
+To test with real documents and images, add your sample files under `tests/fixtures/`. For example:
+```
+tests/fixtures/sample.docx
+tests/fixtures/sample.pdf
+tests/fixtures/sample.png
+```
+These fixture files are ignored by Git (see `.gitignore`).
+
+### End-to-End Tests
+
+Place E2E tests under `tests/e2e/`, such as `tests/e2e/test_generate.py`. Example:
+
+```python
+import io
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def mock_api_key(monkeypatch):
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setattr("app.core.security.verify_api_key", lambda *args, **kwargs: True)
+
+
+def test_generate_endpoint(monkeypatch):
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setattr("app.services.rag.RAGService.retrieve", lambda *_: [])
+    monkeypatch.setattr("app.services.llm.call_llm", lambda *_: '{"client":"","client_address1":"","client_address2":"","date":"","vs_rif":"","rif_broker":"","polizza":"","ns_rif":"","assicurato":"","indirizzo_ass1":"","indirizzo_ass2":"","luogo":"","data_danno":"","cause":"","data_incarico":"","merce":"","peso_merce":"","valore_merce":"","data_intervento":"","dinamica_eventi":"","accertamenti":"","quantificazione":"","commento":"","allegati":""}')
+    monkeypatch.setattr("app.services.pipeline.PipelineService.run", lambda *a, **k: {"dinamica_eventi":"","accertamenti":"","quantificazione":"","commento":""})
+    monkeypatch.setattr("app.services.doc_builder.inject", lambda *a, **k: b"DOCXBYTES")
+
+    response = client.post(
+        "/api/generate",
+        headers={"X-API-Key": "testkey"},
+        files={"files": ("sample.docx", b"PK\x03\x04", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-disposition"].endswith(".docx")
+```
+
+---
+
 ## Project Structure
 
 ```

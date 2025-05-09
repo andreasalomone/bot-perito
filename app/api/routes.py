@@ -1,7 +1,8 @@
+import inspect
 import json
 import logging
 from tempfile import TemporaryDirectory
-from typing import List
+from typing import List, Tuple
 from uuid import uuid4
 
 from docx import Document
@@ -32,6 +33,75 @@ from app.services.rag import RAGError, RAGService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Add helper functions for text and image extraction
+async def extract_texts(
+    files: List[UploadFile], request_id: str
+) -> Tuple[List[str], List[str]]:
+    texts: List[str] = []
+    imgs: List[str] = []
+    for f in files:
+        try:
+            txt, tok = extract(f.filename or "", f.file)
+            if txt:
+                texts.append(txt)
+            if tok:
+                imgs.append(tok)
+            logger.debug(
+                "[%s] Extracted from %s: text=%d chars, has_image=%s",
+                request_id,
+                f.filename,
+                len(txt) if txt else 0,
+                bool(tok),
+            )
+        except ExtractorError as e:
+            logger.error(
+                "[%s] Extraction error from %s: %s",
+                request_id,
+                f.filename,
+                str(e),
+                exc_info=True,
+            )
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            logger.error(
+                "[%s] Failed to extract from %s: %s",
+                request_id,
+                f.filename,
+                str(e),
+                exc_info=True,
+            )
+            raise HTTPException(400, f"Failed to process file {f.filename}")
+    return texts, imgs
+
+
+async def process_images(damage_imgs: List[UploadFile], request_id: str) -> List[str]:
+    imgs: List[str] = []
+    for p in damage_imgs:
+        try:
+            _, tok = extract_damage_image(p.file)
+            imgs.append(tok)
+            logger.debug("[%s] Extracted damage image from %s", request_id, p.filename)
+        except ExtractorError as e:
+            logger.error(
+                "[%s] Extraction error for damage image %s: %s",
+                request_id,
+                p.filename,
+                str(e),
+                exc_info=True,
+            )
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            logger.error(
+                "[%s] Failed to extract damage image from %s: %s",
+                request_id,
+                p.filename,
+                str(e),
+                exc_info=True,
+            )
+            raise HTTPException(400, f"Failed to process damage image {p.filename}")
+    return imgs
 
 
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
@@ -69,68 +139,8 @@ async def generate(
                     await validate_upload(img, request_id)
 
             # --- 1: estrazione testo + immagini ------------------------
-            texts, imgs = [], []
-            for f in files:
-                try:
-                    txt, tok = extract(f.filename or "", f.file)
-                    if txt:
-                        texts.append(txt)
-                    if tok:
-                        imgs.append(tok)
-                    logger.debug(
-                        "[%s] Extracted from %s: text=%d chars, has_image=%s",
-                        request_id,
-                        f.filename,
-                        len(txt) if txt else 0,
-                        bool(tok),
-                    )
-                except ExtractorError as e:
-                    logger.error(
-                        "[%s] Extraction error from %s: %s",
-                        request_id,
-                        f.filename,
-                        str(e),
-                        exc_info=True,
-                    )
-                    raise HTTPException(400, str(e))
-                except Exception as e:
-                    logger.error(
-                        "[%s] Failed to extract from %s: %s",
-                        request_id,
-                        f.filename,
-                        str(e),
-                        exc_info=True,
-                    )
-                    raise HTTPException(400, f"Failed to process file {f.filename}")
-
-            for p in damage_imgs or []:
-                try:
-                    _, tok = extract_damage_image(p.file)
-                    imgs.append(tok)
-                    logger.debug(
-                        "[%s] Extracted damage image from %s", request_id, p.filename
-                    )
-                except ExtractorError as e:
-                    logger.error(
-                        "[%s] Extraction error for damage image %s: %s",
-                        request_id,
-                        p.filename,
-                        str(e),
-                        exc_info=True,
-                    )
-                    raise HTTPException(400, str(e))
-                except Exception as e:
-                    logger.error(
-                        "[%s] Failed to extract damage image from %s: %s",
-                        request_id,
-                        p.filename,
-                        str(e),
-                        exc_info=True,
-                    )
-                    raise HTTPException(
-                        400, f"Failed to process damage image {p.filename}"
-                    )
-
+            texts, imgs = await extract_texts(files, request_id)
+            imgs += await process_images(damage_imgs or [], request_id)
             if len(imgs) > 10:
                 logger.warning(
                     "[%s] Too many images (%d), truncating to 10", request_id, len(imgs)
@@ -191,12 +201,14 @@ async def generate(
                     template_excerpt, corpus, imgs, notes, similar_cases=similar_cases
                 )
                 if len(base_prompt) > settings.max_total_prompt_chars:
-                    logger.warning(
-                        "[%s] Prompt too large: %d chars", request_id, len(base_prompt)
-                    )
                     raise HTTPException(413, "Prompt troppo grande o troppi allegati")
 
-                raw_base = await call_llm(base_prompt)
+                # Support both async and sync call_llm stubs
+                res = call_llm(base_prompt)
+                if inspect.isawaitable(res):
+                    raw_base = await res
+                else:
+                    raw_base = res
                 base_ctx = extract_json(raw_base)
                 logger.info(
                     "[%s] Successfully extracted base context fields", request_id

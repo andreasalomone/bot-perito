@@ -115,6 +115,8 @@ generare un **outline dettagliato e completo** della perizia, in formato JSON:
                 "[%s] Failed to generate outline: %s", request_id, str(e), exc_info=True
             )
             raise PipelineError("Failed to generate outline") from e
+        except PipelineError:  # Specifically catch and re-raise PipelineErrors
+            raise
         except Exception as e:
             logger.exception("[%s] Unexpected error in generate_outline", request_id)
             raise PipelineError("Unexpected error in outline generation") from e
@@ -201,6 +203,8 @@ Deve essere almeno 300 parole, rispondendo a tutte queste domande:
                 exc_info=True,
             )
             raise PipelineError(f"Failed to expand section {title}") from e
+        except PipelineError:
+            raise
         except Exception as e:
             logger.exception(
                 "[%s] Unexpected error expanding section '%s'", request_id, title
@@ -245,6 +249,8 @@ uniforma tono e stile, correggi errori e ripetizioni:
                 exc_info=True,
             )
             raise PipelineError("Failed to harmonize sections") from e
+        except PipelineError:
+            raise
         except Exception as e:
             logger.exception("[%s] Unexpected error in harmonization", request_id)
             raise PipelineError("Unexpected error in harmonization") from e
@@ -295,6 +301,8 @@ uniforma tono e stile, correggi errori e ripetizioni:
                 "commento": sections.get("commento", ""),
             }
 
+        except PipelineError:
+            raise
         except Exception as e:
             logger.exception("[%s] Pipeline run failed", request_id)
             raise PipelineError("Pipeline execution failed") from e
