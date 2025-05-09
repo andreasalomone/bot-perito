@@ -31,7 +31,7 @@ def test_generate_prompt_size_limit(monkeypatch):
         "/generate",
         files=[("files", ("dummy.pdf", b"dummy content", "application/pdf"))],
         data={"notes": "", "use_rag": "false"},
-        headers={"X-API-Key": "secret"},
+        headers={"X-API-Key": settings.api_key},
     )
     assert response.status_code == 413
-    assert response.json() == {"error": "Prompt troppo grande o troppi allegati"}
+    assert response.json() == {"detail": "Prompt too large or too many attachments"}
