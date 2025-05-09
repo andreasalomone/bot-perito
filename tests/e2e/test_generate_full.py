@@ -88,23 +88,26 @@ def test_generate_full_happy_path(monkeypatch):
 
     monkeypatch.setattr("app.api.routes.RAGService", lambda: FakeRAGService())
 
+    # Updated FakePipeline mock
     class FakePipeline:
         async def run(self, tpl, corpus, imgs, notes, similar_cases, extra_styles):
-            return {
-                "dinamica_eventi": "dyn_pipeline",
-                "accertamenti": "acc_pipeline",
-                "quantificazione": "quant_pipeline",
-                "commento": "comm_pipeline",
+            pipeline_payload = {
+                "dinamica_eventi": "dyn_pipeline_stream",
+                "accertamenti": "acc_pipeline_stream",
+                "quantificazione": "quant_pipeline_stream",
+                "commento": "comm_pipeline_stream",
             }
+            yield json.dumps({"type": "status", "message": "Pipeline started"})
+            yield json.dumps({"type": "data", "payload": pipeline_payload})
 
     monkeypatch.setattr("app.api.routes.PipelineService", lambda: FakePipeline())
 
-    monkeypatch.setattr("app.api.routes.inject", lambda tpl_path, payload: b"PK1234")
+    # Remove mock for app.api.routes.inject as it's not used by /generate stream
+    # monkeypatch.setattr("app.api.routes.inject", lambda tpl_path, payload: b"PK1234")
 
-    # Instantiate TestClient here as it's an E2E test
     local_client = TestClient(app)
 
-    response = local_client.post(  # Use local_client
+    response = local_client.post(
         "/generate",
         files=[("files", ("dummy.pdf", b"dummy content for file", "application/pdf"))],
         data={"notes": "some notes for the test", "use_rag": "false"},
@@ -119,7 +122,36 @@ def test_generate_full_happy_path(monkeypatch):
             print(response.text)
 
     assert response.status_code == 200
-    assert response.content == b"PK1234"
-    content_disposition = response.headers.get("content-disposition", "").lower()
-    assert "attachment" in content_disposition
-    assert "filename=report.docx" in content_disposition
+    assert response.headers["content-type"] == "application/x-ndjson"
+
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    final_data_event = None
+    for item in streamed_data:
+        if item.get("type") == "data" and "payload" in item:
+            final_data_event = item
+            break
+
+    assert final_data_event is not None, "Final 'data' event not found in stream"
+
+    # base_json_dict is defined earlier in the test
+    expected_pipeline_payload = {
+        "dinamica_eventi": "dyn_pipeline_stream",
+        "accertamenti": "acc_pipeline_stream",
+        "quantificazione": "quant_pipeline_stream",
+        "commento": "comm_pipeline_stream",
+    }
+    expected_combined_context = {**base_json_dict, **expected_pipeline_payload}
+
+    assert (
+        final_data_event["payload"] == expected_combined_context
+    ), f"Payload mismatch. Expected: {expected_combined_context}, Got: {final_data_event['payload']}"
+
+    # Remove assertions for DOCX content and headers
+    # assert response.content == b"PK1234"
+    # content_disposition = response.headers.get("content-disposition", "").lower()
+    # assert "attachment" in content_disposition
+    # assert "filename=report.docx" in content_disposition

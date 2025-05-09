@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import pathlib
-from typing import Any, Dict, List
+from typing import Any, AsyncGenerator, Dict, List
 from uuid import uuid4
 
 import jinja2
@@ -251,16 +251,28 @@ class PipelineService:
         notes: str,
         similar: List[Dict[str, Any]],
         extra_styles: str,
-    ) -> Dict[str, str]:
+    ) -> AsyncGenerator[str, None]:
         request_id = str(uuid4())
         logger.info(
             "[%s] Starting pipeline run with corpus length %d", request_id, len(corpus)
         )
+        yield json.dumps(
+            {"type": "status", "message": "Initializing report generation..."}
+        )
 
         try:
+            yield json.dumps(
+                {"type": "status", "message": "Generating report outline..."}
+            )
             # 1. Outline
             outline = await self.generate_outline(
                 template_excerpt, corpus, similar, notes, imgs
+            )
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": f"Outline generated with {len(outline)} sections.",
+                }
             )
 
             # 2. Context dictionary
@@ -272,22 +284,62 @@ class PipelineService:
                 "extra_styles": extra_styles,
             }
 
+            yield json.dumps(
+                {"type": "status", "message": "Expanding report sections..."}
+            )
             # 3. Espandi sezioni
             sections = {}
-            for sec_outline_item in outline:
+            for i, sec_outline_item in enumerate(outline):
+                # ADDED: Detailed status for each section
+                yield json.dumps(
+                    {
+                        "type": "status",
+                        "message": f"Expanding section {i + 1}/{len(outline)}: {sec_outline_item['title']}...",
+                    }
+                )
                 text = await self.expand_section(sec_outline_item, context)
                 sections[sec_outline_item["section"]] = text
+                yield json.dumps(
+                    {
+                        "type": "status",
+                        "message": f"Section '{sec_outline_item['title']}' expanded.",
+                    }
+                )
 
+            yield json.dumps(
+                {"type": "status", "message": "Harmonizing report content..."}
+            )
             # 4. Armonizza
             harmonized_sections_dict = await self.harmonize(sections, extra_styles)
+            yield json.dumps(
+                {"type": "status", "message": "Content harmonization complete."}
+            )
 
             logger.info("[%s] Pipeline completed successfully", request_id)
 
             # 5. Restituisci mappa per doc_builder
-            return harmonized_sections_dict
+            # MODIFIED: Yield final data with a 'data' type
+            yield json.dumps({"type": "data", "payload": harmonized_sections_dict})
 
-        except PipelineError:
+        except PipelineError as e:
+            logger.error(
+                "[%s] Pipeline run failed due to PipelineError: %s",
+                request_id,
+                str(e),
+                exc_info=False,
+            )
+            yield json.dumps(
+                {"type": "error", "message": f"A problem occurred: {str(e)}"}
+            )
             raise
         except Exception as e:
-            logger.exception("[%s] Pipeline run failed", request_id)
+            logger.exception(
+                "[%s] Pipeline run failed with unexpected error", request_id
+            )
+            yield json.dumps(
+                {
+                    "type": "error",
+                    "message": f"An unexpected problem occurred: {str(e)}",
+                }
+            )
             raise PipelineError("Pipeline execution failed") from e

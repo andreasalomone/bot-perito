@@ -66,3 +66,7 @@ frontend/build/
 # Cursor Rules
 .cursorrules
 /.cursor/rules
+
+#docs
+docs/
+/docs

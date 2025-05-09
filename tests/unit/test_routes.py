@@ -1,8 +1,9 @@
+import asyncio  # Added for asyncio.sleep
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 from app.api.routes import (
@@ -18,6 +19,7 @@ from app.main import app  # Assuming app.main.app is your FastAPI instance
 
 # Imports for custom exception types
 from app.services.extractor import ExtractorError
+from app.services.pipeline import PipelineError
 
 
 # Dummy function to successfully override verify_api_key
@@ -128,18 +130,11 @@ async def test_extract_texts_http_exception_propagates(mock_extract_single_file)
 @pytest.mark.asyncio
 @patch("app.api.routes._extract_single_file", new_callable=AsyncMock)
 async def test_extract_texts_other_exception_re_raised(mock_extract_single_file):
-    original_exception = ValueError("Some value error")
-    # Simulate that one of the gather tasks returns this exception
-    mock_extract_single_file.return_value = original_exception
-    mock_files = [MagicMock(spec=UploadFile)]
-
-    # Need to adjust how the side_effect is applied for gather returning the exception
-    # If _extract_single_file itself raises, gather catches it.
-    # If _extract_single_file returns an exception instance (how return_exceptions=True works),
-    # then the loop in extract_texts must handle it.
+    # original_exception = ValueError("Some value error") # Not used
     mock_extract_single_file.side_effect = ValueError(
         "Some value error from side_effect"
     )
+    mock_files = [MagicMock(spec=UploadFile)]
 
     with pytest.raises(ValueError) as exc_info:
         await extract_texts(mock_files, "test_request_id")
@@ -248,21 +243,21 @@ async def test_process_images_other_exception_re_raised(mock_process_single_imag
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-@patch("app.api.routes._run_processing_pipeline", new_callable=AsyncMock)
-@patch("app.api.routes._generate_and_stream_docx", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
 @patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
 async def test_generate_endpoint_success_minimal_refactored(
-    mock_settings,
-    mock_generate_and_stream_docx,
-    mock_run_processing_pipeline,
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,  # Injected mock for the PipelineService class
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
@@ -279,19 +274,31 @@ async def test_generate_endpoint_success_minimal_refactored(
         "cliente": "Test Client",
         "polizza": "123",
     }
-    mock_run_processing_pipeline.return_value = {"section1": "Content 1"}
-    mock_generate_and_stream_docx.return_value = StreamingResponse(
-        content=iter([b"mock docx content for minimal test"])
-    )
+    pipeline_section_map = {"section1": "Content 1 from pipeline"}
 
-    files_data = {
-        "files": ("test_doc.pdf", b"dummy file content for test", "application/pdf")
-    }
+    # Configure the mocked PipelineService instance's run method
+    mock_pipeline_instance = MockPipelineService.return_value
+
+    async def mock_pipeline_run_gen_success(*args, **kwargs):  # Ensure it accepts args
+        yield json.dumps({"type": "status", "message": "Pipeline progress..."})
+        await asyncio.sleep(0)
+        yield json.dumps({"type": "data", "payload": pipeline_section_map})
+
+    mock_pipeline_instance.run = MagicMock(side_effect=mock_pipeline_run_gen_success)
+
+    file_tuple = ("test_doc.pdf", b"dummy file content for test", "application/pdf")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Test notes for generation", "use_rag": "true"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
     assert response.status_code == 200
+
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
     mock_validate_and_extract_files.assert_called_once()
     request_id_arg = mock_validate_and_extract_files.call_args[0][2]
 
@@ -309,41 +316,52 @@ async def test_generate_endpoint_success_minimal_refactored(
         [{"title": "Similar Case 1", "content_snippet": "Snippet 1"}],
         request_id_arg,
     )
-    mock_run_processing_pipeline.assert_called_once_with(
+    # Check that the 'run' method on the instance was called
+    mock_pipeline_instance.run.assert_called_once_with(
         "Template excerpt part",
         "Guarded corpus",
         ["img_token1", "damage_img_token1"],
         "Test notes for generation",
         [{"title": "Similar Case 1", "content_snippet": "Snippet 1"}],
-        request_id_arg,
+        extra_styles="",
     )
-    expected_final_ctx = {
+
+    final_data_event = None
+    for item in streamed_data:
+        if item.get("type") == "data" and "payload" in item:
+            final_data_event = item
+            break
+
+    assert final_data_event is not None, "Final 'data' event not found in stream"
+
+    expected_final_payload = {
         "cliente": "Test Client",
         "polizza": "123",
-        "section1": "Content 1",
+        **pipeline_section_map,
     }
-    mock_generate_and_stream_docx.assert_called_once_with(
-        str(mock_settings.template_path), expected_final_ctx, request_id_arg
-    )
+    assert (
+        final_data_event["payload"] == expected_final_payload
+    ), f"Final payload mismatch. Expected {expected_final_payload}, Got {final_data_event['payload']}"
+
     patched_temp_dir.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-@patch("app.api.routes._run_processing_pipeline", new_callable=AsyncMock)
-@patch("app.api.routes._generate_and_stream_docx", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
 @patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
 async def test_generate_endpoint_success_no_rag_refactored(
-    mock_settings,
-    mock_generate_and_stream_docx,
-    mock_run_processing_pipeline,
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
@@ -351,26 +369,44 @@ async def test_generate_endpoint_success_no_rag_refactored(
     mock_validate_and_extract_files.return_value = ("Guarded corpus no RAG", [])
     mock_load_template_excerpt.return_value = "Template excerpt no RAG"
     mock_retrieve_similar_cases.return_value = []
-    mock_extract_base_context.return_value = {"cliente": "Client No RAG"}
-    mock_run_processing_pipeline.return_value = {"section_no_rag": "Content no RAG"}
-    mock_generate_and_stream_docx.return_value = StreamingResponse(
-        content=iter([b"mock docx content for no rag test"])
+    base_ctx_no_rag = {"cliente": "Client No RAG"}
+    mock_extract_base_context.return_value = base_ctx_no_rag
+
+    pipeline_section_map_no_rag = {"section_no_rag": "Content no RAG"}
+
+    mock_pipeline_instance = MockPipelineService.return_value
+
+    async def mock_pipeline_run_gen_no_rag_success(
+        *args, **kwargs
+    ):  # Ensure it accepts args
+        yield json.dumps({"type": "status", "message": "Pipeline for no RAG"})
+        await asyncio.sleep(0)
+        yield json.dumps({"type": "data", "payload": pipeline_section_map_no_rag})
+
+    mock_pipeline_instance.run = MagicMock(
+        side_effect=mock_pipeline_run_gen_no_rag_success
     )
 
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Notes no RAG", "use_rag": "false"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
     assert response.status_code == 200
-    request_id_arg = mock_validate_and_extract_files.call_args[0][2]
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
 
     mock_validate_and_extract_files.assert_called_once()
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
+
     mock_load_template_excerpt.assert_called_once_with(
-        str(mock_settings.template_path), request_id_arg
+        str(mock_settings.template_path), request_id_arg_val
     )
     mock_retrieve_similar_cases.assert_called_once_with(
-        "Guarded corpus no RAG", False, request_id_arg
+        "Guarded corpus no RAG", False, request_id_arg_val
     )
     mock_extract_base_context.assert_called_once_with(
         "Template excerpt no RAG",
@@ -378,52 +414,174 @@ async def test_generate_endpoint_success_no_rag_refactored(
         [],
         "Notes no RAG",
         [],
-        request_id_arg,
+        request_id_arg_val,
     )
-    mock_run_processing_pipeline.assert_called_once_with(
+    mock_pipeline_instance.run.assert_called_once_with(
         "Template excerpt no RAG",
         "Guarded corpus no RAG",
         [],
         "Notes no RAG",
         [],
-        request_id_arg,
+        extra_styles="",
     )
-    expected_final_ctx = {
-        "cliente": "Client No RAG",
-        "section_no_rag": "Content no RAG",
-    }
-    mock_generate_and_stream_docx.assert_called_once_with(
-        str(mock_settings.template_path), expected_final_ctx, request_id_arg
+
+    final_data_event = next(
+        (item for item in streamed_data if item.get("type") == "data"), None
     )
+    assert final_data_event is not None, "Final 'data' event not found in stream"
+    expected_final_payload = {**base_ctx_no_rag, **pipeline_section_map_no_rag}
+    assert final_data_event["payload"] == expected_final_payload
     patched_temp_dir.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
+@patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
 @patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-async def test_generate_endpoint_template_load_failure_refactored(
-    mock_load_template_excerpt,
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+async def test_generate_endpoint_image_truncation_refactored(
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
+    client: TestClient,
+    patched_temp_dir,
+):
+    mock_settings.template_path = "mock/template_truncation.docx"
+    original_images = [f"img_token_{i}" for i in range(15)]
+    expected_truncated_images = original_images[:10]
+
+    mock_validate_and_extract_files.return_value = (
+        "corpus for truncation",
+        expected_truncated_images,
+    )
+
+    mock_load_template_excerpt.return_value = "template excerpt for truncation"
+    mock_retrieve_similar_cases.return_value = []
+    base_ctx_trunc = {"base_field": "value_trunc"}
+    mock_extract_base_context.return_value = base_ctx_trunc
+
+    pipeline_section_map_trunc = {"section_map_field": "section_value_trunc"}
+
+    mock_pipeline_instance = MockPipelineService.return_value
+
+    async def mock_pipeline_run_gen_trunc_success(
+        *args, **kwargs
+    ):  # Ensure it accepts args
+        yield json.dumps({"type": "status", "message": "Pipeline for truncation"})
+        await asyncio.sleep(0)
+        yield json.dumps({"type": "data", "payload": pipeline_section_map_trunc})
+
+    mock_pipeline_instance.run = MagicMock(
+        side_effect=mock_pipeline_run_gen_trunc_success
+    )
+
+    file_tuple = ("f_trunc.pdf", b"d_trunc", "application/pdf")
+    files_for_request = [("files", file_tuple)]
+    form_data = {"notes": "notes for truncation", "use_rag": "false"}
+
+    response = client.post("/generate", files=files_for_request, data=form_data)
+
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    mock_validate_and_extract_files.assert_called_once()
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
+
+    mock_load_template_excerpt.assert_called_once_with(
+        str(mock_settings.template_path), request_id_arg_val
+    )
+    mock_retrieve_similar_cases.assert_called_once_with(
+        "corpus for truncation", False, request_id_arg_val
+    )
+    mock_extract_base_context.assert_called_once_with(
+        "template excerpt for truncation",
+        "corpus for truncation",
+        expected_truncated_images,
+        "notes for truncation",
+        [],
+        request_id_arg_val,
+    )
+    mock_pipeline_instance.run.assert_called_once_with(
+        "template excerpt for truncation",
+        "corpus for truncation",
+        expected_truncated_images,
+        "notes for truncation",
+        [],
+        extra_styles="",
+    )
+
+    final_data_event = next(
+        (item for item in streamed_data if item.get("type") == "data"), None
+    )
+    assert final_data_event is not None, "Final 'data' event not found in stream"
+    expected_final_payload = {**base_ctx_trunc, **pipeline_section_map_trunc}
+    assert final_data_event["payload"] == expected_final_payload
+    patched_temp_dir.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
+@patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+async def test_generate_endpoint_template_load_failure_refactored(
+    mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
     mock_validate_and_extract_files.return_value = ("Corpus", [])
+    expected_error_detail = "Template loading failed for excerpt"
     mock_load_template_excerpt.side_effect = HTTPException(
-        status_code=500, detail="Template loading failed for excerpt"
+        status_code=500, detail=expected_error_detail
     )
 
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Test notes", "use_rag": "false"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
+    assert response.status_code == 200
 
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
-    assert "Template loading failed for excerpt" in response_data["detail"]
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    assert len(streamed_data) > 0
+    found_error = False
+    for item in streamed_data:
+        if item.get("type") == "error" and item.get("message") == expected_error_detail:
+            found_error = True
+            break
+    assert (
+        found_error
+    ), f"Expected error message '{expected_error_detail}' not found in stream: {streamed_data}"
 
     mock_validate_and_extract_files.assert_called_once()
-    mock_load_template_excerpt.assert_called_once()
+    _, _, request_id_arg = mock_validate_and_extract_files.call_args[0]
+    mock_load_template_excerpt.assert_called_once_with(
+        str(mock_settings.template_path), request_id_arg
+    )
+    mock_retrieve_similar_cases.assert_not_called()
     patched_temp_dir.assert_called_once()
 
 
@@ -434,232 +592,252 @@ async def test_generate_endpoint_validation_failure_refactored(
     client: TestClient,
     patched_temp_dir,
 ):
+    expected_error_detail = "Invalid file type"
     mock_validate_and_extract_files.side_effect = HTTPException(
-        status_code=400, detail="Invalid file type"
+        status_code=400, detail=expected_error_detail
     )
 
-    files_data = {"files": ("invalid.txt", b"dummy content", "text/plain")}
+    file_tuple = ("invalid.txt", b"dummy content", "text/plain")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Test notes", "use_rag": "false"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
-    assert response.status_code == 400
-    response_data = response.json()
-    assert "detail" in response_data
-    assert "Invalid file type" in response_data["detail"]
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    found_error = any(
+        item.get("type") == "error" and item.get("message") == expected_error_detail
+        for item in streamed_data
+    )
+    assert (
+        found_error
+    ), f"Expected error message '{expected_error_detail}' not found in stream: {streamed_data}"
 
     mock_validate_and_extract_files.assert_called_once()
     patched_temp_dir.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
+@patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
 @patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
 async def test_generate_endpoint_rag_error_refactored(
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
+    mock_settings.template_path = "mock/template_rag_error.docx"
     mock_validate_and_extract_files.return_value = ("Corpus for RAG error", [])
     mock_load_template_excerpt.return_value = "Template for RAG error"
+    expected_error_detail = "RAG processing failed: RAG service failed"
     mock_retrieve_similar_cases.side_effect = HTTPException(
-        status_code=500, detail="RAG processing failed: RAG service failed"
+        status_code=500, detail=expected_error_detail
     )
 
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Notes for RAG error", "use_rag": "true"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
-    assert "RAG processing failed: RAG service failed" in response_data["detail"]
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
 
-    mock_validate_and_extract_files.assert_called_once()
-    mock_load_template_excerpt.assert_called_once()
-    mock_retrieve_similar_cases.assert_called_once()
-    patched_temp_dir.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-# No need to mock _run_processing_pipeline if _extract_base_context fails
-async def test_generate_endpoint_llm_error_refactored(
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
-    mock_validate_and_extract_files,
-    client: TestClient,
-    patched_temp_dir,
-):
-    mock_validate_and_extract_files.return_value = ("Corpus", [])
-    mock_load_template_excerpt.return_value = "Template"
-    mock_retrieve_similar_cases.return_value = []
-    mock_extract_base_context.side_effect = HTTPException(
-        status_code=500,
-        detail="LLM processing for base fields failed: LLM processing failed",
+    found_error = any(
+        item.get("type") == "error" and item.get("message") == expected_error_detail
+        for item in streamed_data
     )
-
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
-    form_data = {"notes": "Notes", "use_rag": "false"}
-
-    response = client.post("/generate", files=files_data, data=form_data)
-
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
     assert (
-        "LLM processing for base fields failed: LLM processing failed"
-        in response_data["detail"]
-    )
+        found_error
+    ), f"Expected error message '{expected_error_detail}' not found in stream: {streamed_data}"
 
     mock_validate_and_extract_files.assert_called_once()
-    mock_load_template_excerpt.assert_called_once()
-    mock_retrieve_similar_cases.assert_called_once()
-    mock_extract_base_context.assert_called_once()
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
+
+    mock_load_template_excerpt.assert_called_once_with(
+        str(mock_settings.template_path), request_id_arg_val
+    )
+    mock_retrieve_similar_cases.assert_called_once_with(
+        "Corpus for RAG error", True, request_id_arg_val
+    )
     patched_temp_dir.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-@patch("app.api.routes._run_processing_pipeline", new_callable=AsyncMock)
-@patch("app.api.routes._generate_and_stream_docx", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
 @patch("app.api.routes.settings")
-async def test_generate_endpoint_pipeline_error_refactored(
-    mock_settings,
-    mock_generate_and_stream_docx,
-    mock_run_processing_pipeline,
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+async def test_generate_endpoint_llm_error_refactored(
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
-    mock_settings.template_path = "mock/template.docx"
+    mock_settings.template_path = "mock/template_llm_error.docx"
+    mock_validate_and_extract_files.return_value = ("Corpus for LLM error", [])
+    mock_load_template_excerpt.return_value = "Template for LLM error"
+    mock_retrieve_similar_cases.return_value = []
+    expected_error_detail = "LLM processing for base fields failed: LLM service errored"
+    mock_extract_base_context.side_effect = HTTPException(
+        status_code=500, detail=expected_error_detail
+    )
+
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
+    form_data = {"notes": "Notes for LLM error", "use_rag": "false"}
+
+    response = client.post("/generate", files=files_for_request, data=form_data)
+
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    found_error = any(
+        item.get("type") == "error" and item.get("message") == expected_error_detail
+        for item in streamed_data
+    )
+    assert (
+        found_error
+    ), f"Expected error message '{expected_error_detail}' not found in stream: {streamed_data}"
+
+    mock_validate_and_extract_files.assert_called_once()
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
+
+    mock_load_template_excerpt.assert_called_once_with(
+        str(mock_settings.template_path), request_id_arg_val
+    )
+    mock_retrieve_similar_cases.assert_called_once_with(
+        "Corpus for LLM error", False, request_id_arg_val
+    )
+    mock_extract_base_context.assert_called_once_with(
+        "Template for LLM error",
+        "Corpus for LLM error",
+        [],
+        "Notes for LLM error",
+        [],
+        request_id_arg_val,
+    )
+    MockPipelineService.return_value.run.assert_not_called()
+    patched_temp_dir.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
+@patch("app.api.routes.settings")
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+async def test_generate_endpoint_pipeline_error_refactored(
+    mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
+    client: TestClient,
+    patched_temp_dir,
+):
+    mock_settings.template_path = "mock/template_pipeline_error.docx"
     mock_validate_and_extract_files.return_value = ("Corpus for pipeline error", [])
     mock_load_template_excerpt.return_value = "Template for pipeline error"
     mock_retrieve_similar_cases.return_value = []
-    mock_extract_base_context.return_value = {"base_field": "base_value"}
+    mock_extract_base_context.return_value = {"base": "context"}
 
-    error_message = "Pipeline processing failed: Test pipeline error from helper"
-    mock_run_processing_pipeline.side_effect = HTTPException(
-        status_code=500, detail=error_message
+    pipeline_error_message = "Simulated pipeline failure"
+    # This is the message the _stream_report_generation_logic will yield
+    expected_stream_error_message = (
+        f"Pipeline processing error: {pipeline_error_message}"
     )
 
-    files_data = {
-        "files": ("test.pdf", b"dummy data for pipeline error", "application/pdf")
-    }
-    form_data = {"notes": "Notes for pipeline error test", "use_rag": "false"}
+    mock_pipeline_instance = MockPipelineService.return_value
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    async def mock_pipeline_run_gen_raises_error_sideffect(
+        *args, **kwargs
+    ):  # Ensure it accepts args
+        await asyncio.sleep(0)  # Ensures it's an async generator
+        raise PipelineError(pipeline_error_message)
+        yield  # Unreachable, but makes it a generator syntax-wise
 
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
-    assert error_message in response_data["detail"]
-
-    mock_validate_and_extract_files.assert_called_once()
-    request_id_arg = mock_validate_and_extract_files.call_args[0][2]
-    mock_load_template_excerpt.assert_called_once_with(
-        str(mock_settings.template_path), request_id_arg
-    )
-    mock_retrieve_similar_cases.assert_called_once_with(
-        "Corpus for pipeline error", False, request_id_arg
-    )
-    mock_extract_base_context.assert_called_once_with(
-        "Template for pipeline error",
-        "Corpus for pipeline error",
-        [],
-        "Notes for pipeline error test",
-        [],
-        request_id_arg,
-    )
-    mock_run_processing_pipeline.assert_called_once_with(
-        "Template for pipeline error",
-        "Corpus for pipeline error",
-        [],
-        "Notes for pipeline error test",
-        [],
-        request_id_arg,
-    )
-    mock_generate_and_stream_docx.assert_not_called()
-    patched_temp_dir.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes.settings")
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-@patch("app.api.routes._run_processing_pipeline", new_callable=AsyncMock)
-@patch("app.api.routes._generate_and_stream_docx", new_callable=AsyncMock)
-async def test_generate_endpoint_image_truncation_refactored(
-    mock_generate_and_stream_docx,
-    mock_run_processing_pipeline,
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
-    mock_settings,
-    mock_validate_and_extract_files,
-    client: TestClient,
-    patched_temp_dir,
-):
-    mock_settings.template_path = "mock/template.docx"
-    expected_truncated_images = [f"img_token_{i}" for i in range(7)] + [
-        f"damage_token_{i}" for i in range(3)
-    ]
-    mock_validate_and_extract_files.return_value = (
-        "corpus for truncation",
-        expected_truncated_images,
+    mock_pipeline_instance.run = MagicMock(
+        side_effect=mock_pipeline_run_gen_raises_error_sideffect
     )
 
-    mock_load_template_excerpt.return_value = "template excerpt"
-    mock_retrieve_similar_cases.return_value = []
-    mock_extract_base_context.return_value = {"base_field": "value"}
-    mock_run_processing_pipeline.return_value = {"section_map_field": "section_value"}
-    mock_generate_and_stream_docx.return_value = StreamingResponse(
-        content=iter([b"mock docx content for truncation test"])
-    )
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
+    form_data = {"notes": "Notes for pipeline error", "use_rag": "false"}
 
-    files_data = {"files": ("f.pdf", b"d", "application/pdf")}
-    all_files_data = files_data
-    form_data = {"notes": "notes for truncation", "use_rag": "false"}
-
-    response = client.post("/generate", files=all_files_data, data=form_data)
-
-    mock_validate_and_extract_files.assert_called_once()
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
     assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
 
-    request_id_arg = mock_validate_and_extract_files.call_args[0][2]
-
-    mock_extract_base_context.assert_called_once_with(
-        "template excerpt",
-        "corpus for truncation",
-        expected_truncated_images,
-        "notes for truncation",
-        [],
-        request_id_arg,
+    found_error = any(
+        item.get("type") == "error"
+        and item.get("message", "") == expected_stream_error_message
+        for item in streamed_data
     )
-    mock_run_processing_pipeline.assert_called_once_with(
-        "template excerpt",
-        "corpus for truncation",
-        expected_truncated_images,
-        "notes for truncation",
+    assert (
+        found_error
+    ), f"Expected error message containing '{expected_stream_error_message}' not found in stream: {streamed_data}"
+
+    mock_validate_and_extract_files.assert_called_once()
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
+
+    mock_load_template_excerpt.assert_called_once_with(
+        str(mock_settings.template_path), request_id_arg_val
+    )
+    mock_retrieve_similar_cases.assert_called_once_with(
+        "Corpus for pipeline error", False, request_id_arg_val
+    )
+    mock_extract_base_context.assert_called_once_with(
+        "Template for pipeline error",
+        "Corpus for pipeline error",
         [],
-        request_id_arg,
+        "Notes for pipeline error",
+        [],
+        request_id_arg_val,
+    )
+    mock_pipeline_instance.run.assert_called_once_with(
+        "Template for pipeline error",
+        "Corpus for pipeline error",
+        [],
+        "Notes for pipeline error",
+        [],
+        extra_styles="",
     )
     patched_temp_dir.assert_called_once()
 
@@ -671,96 +849,122 @@ async def test_generate_endpoint_generic_unexpected_error(
     client: TestClient,
     patched_temp_dir,
 ):
-    unexpected_error_message = "A very unexpected problem!"
-    mock_validate_and_extract_files.side_effect = RuntimeError(unexpected_error_message)
+    generic_error_message = "A very generic unexpected error!"
+    mock_validate_and_extract_files.side_effect = Exception(generic_error_message)
+    expected_stream_error_message = (
+        f"An unexpected server error occurred: {generic_error_message}"
+    )
 
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
     form_data = {"notes": "Test notes", "use_rag": "false"}
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    response = client.post("/generate", files=files_for_request, data=form_data)
 
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
-    assert "An unexpected internal error occurred (id: " in response_data["detail"]
-    assert "). Please contact support." in response_data["detail"]
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    found_error = any(
+        item.get("type") == "error"
+        and item.get("message", "") == expected_stream_error_message
+        for item in streamed_data
+    )
+    assert (
+        found_error
+    ), f"Expected error message containing '{expected_stream_error_message}' not found in stream: {streamed_data}"
 
     mock_validate_and_extract_files.assert_called_once()
     patched_temp_dir.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
-@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
-@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
-@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
-@patch("app.api.routes._run_processing_pipeline", new_callable=AsyncMock)
-@patch("app.api.routes._generate_and_stream_docx", new_callable=AsyncMock)
+@patch("app.api.routes.uuid4", return_value=MagicMock(hex="testrequestid"))
 @patch("app.api.routes.settings")
-async def test_generate_endpoint_doc_builder_error_refactored(
-    mock_settings,
-    mock_generate_and_stream_docx,
-    mock_run_processing_pipeline,
-    mock_extract_base_context,
-    mock_retrieve_similar_cases,
-    mock_load_template_excerpt,
+@patch("app.api.routes.PipelineService")
+@patch("app.api.routes._extract_base_context", new_callable=AsyncMock)
+@patch("app.api.routes._retrieve_similar_cases", new_callable=AsyncMock)
+@patch("app.api.routes._load_template_excerpt", new_callable=AsyncMock)
+@patch("app.api.routes._validate_and_extract_files", new_callable=AsyncMock)
+async def test_generate_endpoint_simulated_doc_builder_as_pipeline_stream_error(
     mock_validate_and_extract_files,
+    mock_load_template_excerpt,
+    mock_retrieve_similar_cases,
+    mock_extract_base_context,
+    MockPipelineService,
+    mock_settings,
+    mock_uuid4,
     client: TestClient,
     patched_temp_dir,
 ):
-    mock_settings.template_path = "mock/template.docx"
-    mock_validate_and_extract_files.return_value = ("Corpus for docbuild error", [])
-    mock_load_template_excerpt.return_value = "Template for docbuild error"
+    mock_settings.template_path = "mock/template_doc_build_error.docx"
+    mock_validate_and_extract_files.return_value = ("Corpus for doc build error", [])
+    mock_load_template_excerpt.return_value = "Template for doc build error"
     mock_retrieve_similar_cases.return_value = []
-    mock_extract_base_context.return_value = {"base": "context_docbuild"}
-    mock_run_processing_pipeline.return_value = {"section": "map_docbuild"}
-    error_message = "Document builder error: Failed to build DOCX in test"
-    mock_generate_and_stream_docx.side_effect = HTTPException(
-        status_code=500, detail=error_message
+    mock_extract_base_context.return_value = {"base": "context for doc build"}
+
+    expected_error_detail = (
+        "Simulated document construction failure within pipeline stream"
     )
 
-    files_data = {"files": ("test.pdf", b"dummy", "application/pdf")}
-    form_data = {"notes": "Notes for docbuild error", "use_rag": "false"}
+    mock_pipeline_instance = MockPipelineService.return_value
 
-    response = client.post("/generate", files=files_data, data=form_data)
+    async def mock_pipeline_run_gen_internal_error_sideffect(
+        *args, **kwargs
+    ):  # Ensure it accepts args
+        yield json.dumps({"type": "status", "message": "Pipeline running..."})
+        await asyncio.sleep(0)
+        yield json.dumps({"type": "error", "message": expected_error_detail})
 
-    assert response.status_code == 500
-    response_data = response.json()
-    assert "detail" in response_data
-    assert error_message in response_data["detail"]
+    mock_pipeline_instance.run = MagicMock(
+        side_effect=mock_pipeline_run_gen_internal_error_sideffect
+    )
+
+    file_tuple = ("test.pdf", b"dummy", "application/pdf")
+    files_for_request = [("files", file_tuple)]
+    form_data = {"notes": "Notes for doc build error", "use_rag": "false"}
+
+    response = client.post("/generate", files=files_for_request, data=form_data)
+
+    assert response.status_code == 200
+    streamed_data = []
+    for line in response.iter_lines():
+        if line:
+            streamed_data.append(json.loads(line))
+
+    found_error = any(
+        item.get("type") == "error" and item.get("message") == expected_error_detail
+        for item in streamed_data
+    )
+    assert (
+        found_error
+    ), f"Expected error message '{expected_error_detail}' not found in stream: {streamed_data}"
 
     mock_validate_and_extract_files.assert_called_once()
-    request_id_arg = mock_validate_and_extract_files.call_args[0][2]
+    _, _, request_id_arg_val = mock_validate_and_extract_files.call_args[0]
 
     mock_load_template_excerpt.assert_called_once_with(
-        str(mock_settings.template_path), request_id_arg
+        str(mock_settings.template_path), request_id_arg_val
     )
     mock_retrieve_similar_cases.assert_called_once_with(
-        "Corpus for docbuild error", False, request_id_arg
+        "Corpus for doc build error", False, request_id_arg_val
     )
     mock_extract_base_context.assert_called_once_with(
-        "Template for docbuild error",
-        "Corpus for docbuild error",
+        "Template for doc build error",
+        "Corpus for doc build error",
         [],
-        "Notes for docbuild error",
+        "Notes for doc build error",
         [],
-        request_id_arg,
+        request_id_arg_val,
     )
-    mock_run_processing_pipeline.assert_called_once_with(
-        "Template for docbuild error",
-        "Corpus for docbuild error",
+    mock_pipeline_instance.run.assert_called_once_with(
+        "Template for doc build error",
+        "Corpus for doc build error",
         [],
-        "Notes for docbuild error",
+        "Notes for doc build error",
         [],
-        request_id_arg,
-    )
-    expected_final_ctx_before_inject = {
-        "base": "context_docbuild",
-        "section": "map_docbuild",
-    }
-    mock_generate_and_stream_docx.assert_called_once_with(
-        str(mock_settings.template_path),
-        expected_final_ctx_before_inject,
-        request_id_arg,
+        extra_styles="",
     )
     patched_temp_dir.assert_called_once()

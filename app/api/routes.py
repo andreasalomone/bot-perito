@@ -309,14 +309,51 @@ async def _run_processing_pipeline(
     """Runs the multi-step processing pipeline."""
     try:
         pipeline = PipelineService()  # Instantiated here
-        section_map = await pipeline.run(
+        section_map = None
+        async for update_json_str in pipeline.run(
             template_excerpt,
             corpus,
             imgs,
             notes,
             similar_cases,
             extra_styles="",  # As per original, could be a setting
-        )
+        ):
+            try:
+                update_data = json.loads(update_json_str)
+                if update_data.get("type") == "data" and "payload" in update_data:
+                    section_map = update_data["payload"]
+                    # Assuming the 'data' payload is the final section_map and we can break
+                    break
+                elif update_data.get("type") == "error":
+                    # Propagate error from pipeline
+                    error_message = update_data.get(
+                        "message",
+                        "Unknown pipeline error during non-streaming generation",
+                    )
+                    logger.error(
+                        "[%s] Pipeline error during non-streaming generation: %s",
+                        request_id,
+                        error_message,
+                    )
+                    raise PipelineError(error_message)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "[%s] Non-JSON message from pipeline during non-streaming generation: %s",
+                    request_id,
+                    update_json_str,
+                )
+                # Decide if this is a critical error for non-streaming mode
+                # For now, let's assume it might be, or log and continue if appropriate
+                raise PipelineError(
+                    "Received malformed data from pipeline during non-streaming generation."
+                )
+
+        if section_map is None:
+            logger.error(
+                "[%s] Pipeline finished without returning section map in non-streaming mode.",
+                request_id,
+            )
+            raise PipelineError("Pipeline did not return the expected section map.")
         logger.info("[%s] Pipeline processing completed successfully", request_id)
         return section_map
     except PipelineError as e:
@@ -370,66 +407,192 @@ async def _generate_and_stream_docx(
         )
 
 
-@router.post("/generate", dependencies=[Depends(verify_api_key)])
-async def generate(
-    files: List[UploadFile] = File(...),
-    damage_imgs: List[UploadFile] | None = File(
-        None
-    ),  # Changed default to None for clarity
-    notes: str = Form(""),
-    use_rag: bool = Form(False),
+# Helper function to manage the report generation stream
+async def _stream_report_generation_logic(
+    files: List[UploadFile],
+    damage_imgs: List[UploadFile] | None,
+    notes: str,
+    use_rag: bool,
+    # API key verification is handled by dependency, not passed here
 ):
     request_id = str(uuid4())
     logger.info(
-        "[%s] Starting report generation with %d files and %d damage images",
+        "[%s] Initiating streaming report generation: %d files, %d damage images, use_rag=%s",
         request_id,
         len(files),
         len(damage_imgs or []),
+        use_rag,
     )
 
+    section_map_from_pipeline = None  # To store the result from pipeline.run
+
     try:
-        # TemporaryDirectory is still useful if any underlying service needs file paths
-        # Even if extract/inject could work with BytesIO, other parts or future changes might rely on it.
-        # The audit mentions "This is often a trade-off with library compatibility." - safer to keep.
-        with TemporaryDirectory():
-            # --- Step 1: Validate inputs and extract content ---
-            corpus, imgs = await _validate_and_extract_files(
+        # TemporaryDirectory might be used by underlying functions, keep it scoped
+        with TemporaryDirectory():  # Not strictly used by all helpers, but good for consistency if any need it
+            template_path_str = str(settings.template_path)
+
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": "Validating inputs and extracting content...",
+                }
+            ) + "\n"
+            corpus, imgs_tokens = await _validate_and_extract_files(
                 files, damage_imgs, request_id
             )
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": f"Content extracted: {len(corpus)} chars, {len(imgs_tokens)} images.",
+                }
+            ) + "\n"
 
-            # --- Step 2: Load template excerpt ---
-            template_path = str(settings.template_path)
-            template_excerpt = await _load_template_excerpt(template_path, request_id)
+            yield json.dumps(
+                {"type": "status", "message": "Loading template excerpt..."}
+            ) + "\n"
+            template_excerpt = await _load_template_excerpt(
+                template_path_str, request_id
+            )
+            yield json.dumps(
+                {"type": "status", "message": "Template excerpt loaded."}
+            ) + "\n"
 
-            # --- Step 3: Retrieve similar cases (RAG) ---
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": "Retrieving similar cases (if enabled)...",
+                }
+            ) + "\n"
             similar_cases = await _retrieve_similar_cases(corpus, use_rag, request_id)
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": f"{len(similar_cases)} similar cases retrieved.",
+                }
+            ) + "\n"
 
-            # --- Step 4: Extract base context (simple fields) ---
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": "Extracting base document context (LLM)...",
+                }
+            ) + "\n"
             base_ctx = await _extract_base_context(
-                template_excerpt, corpus, imgs, notes, similar_cases, request_id
+                template_excerpt, corpus, imgs_tokens, notes, similar_cases, request_id
             )
+            yield json.dumps(
+                {"type": "status", "message": "Base document context extracted."}
+            ) + "\n"
 
-            # --- Step 5: Run main processing pipeline (outline, sections, harmonize) ---
-            section_map = await _run_processing_pipeline(
-                template_excerpt, corpus, imgs, notes, similar_cases, request_id
-            )
+            yield json.dumps(
+                {
+                    "type": "status",
+                    "message": "Starting main report generation pipeline...",
+                }
+            ) + "\n"
+            pipeline = PipelineService()
+            async for pipeline_update_json_str in pipeline.run(
+                template_excerpt,
+                corpus,
+                imgs_tokens,  # These are the base64 image tokens
+                notes,
+                similar_cases,
+                extra_styles="",  # Assuming empty as per original setup
+            ):
+                try:
+                    update_data = json.loads(pipeline_update_json_str)
+                    if update_data.get("type") == "data" and "payload" in update_data:
+                        # This is the harmonized_sections_dict from the pipeline
+                        section_map_from_pipeline = update_data.get("payload")
+                        # Yield a status update, don't pass the raw pipeline "data" type directly to client yet
+                        yield json.dumps(
+                            {
+                                "type": "status",
+                                "message": "Core content generation complete. Finalizing report data...",
+                            }
+                        ) + "\n"
+                    elif update_data.get("type") == "error":
+                        # Pass pipeline errors through
+                        logger.error(
+                            f"[{request_id}] Error from pipeline stream: {update_data.get('message')}"
+                        )
+                        yield pipeline_update_json_str + "\n"  # Forward the error
+                        return  # Stop further processing if pipeline reported an error
+                    else:
+                        # Pass through other status updates from the pipeline
+                        yield pipeline_update_json_str + "\n"
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"[{request_id}] Non-JSON message from pipeline: {pipeline_update_json_str}"
+                    )
+                    # Yield a generic status if pipeline sends malformed JSON
+                    yield json.dumps(
+                        {"type": "status", "message": "Processing report sections..."}
+                    ) + "\n"
 
-            # --- Step 6: Combine contexts ---
-            final_ctx = {**base_ctx, **section_map}
+            if section_map_from_pipeline is None:
+                # This means pipeline.run() finished without yielding its 'data' payload, which is an error.
+                logger.error(
+                    f"[{request_id}] Pipeline completed without providing final section map."
+                )
+                raise PipelineError("Pipeline did not return section map data.")
 
-            # --- Step 7: Generate and stream DOCX ---
-            return await _generate_and_stream_docx(template_path, final_ctx, request_id)
+            # Combine base context with the harmonized sections from the pipeline
+            final_ctx = {**base_ctx, **section_map_from_pipeline}
 
-    except HTTPException:  # Re-raise HTTPExceptions directly
-        raise
-    except Exception as e:  # Catch-all for truly unexpected errors
-        # Log the full exception for unexpected errors not caught by helpers
+            # Signal completion and send the final context.
+            # The client-side script.js handles 'data' type by displaying payload and alerting about download.
+            yield json.dumps(
+                {
+                    "type": "data",
+                    "message": "Report data processing complete. Document download needs separate implementation.",
+                    "payload": final_ctx,  # This is the complete context for the .docx
+                }
+            ) + "\n"
+
+    except HTTPException as he:
+        logger.warning(
+            f"[{request_id}] HTTP Exception during stream: {he.status_code} - {he.detail}"
+        )
+        yield json.dumps({"type": "error", "message": str(he.detail)}) + "\n"
+    except PipelineError as pe:
+        logger.error(
+            f"[{request_id}] PipelineError during stream orchestration: {str(pe)}",
+            exc_info=True,
+        )
+        yield json.dumps(
+            {"type": "error", "message": f"Pipeline processing error: {str(pe)}"}
+        ) + "\n"
+    except Exception as e:
         logger.exception(
-            "[%s] Unexpected error during report generation orchestration: %s",
-            request_id,
-            str(e),
+            f"[{request_id}] Unexpected error during report generation stream: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"An unexpected internal error occurred (id: {request_id}). Please contact support.",
-        )
+        yield json.dumps(
+            {
+                "type": "error",
+                "message": f"An unexpected server error occurred: {str(e)}",
+            }
+        ) + "\n"
+    finally:
+        logger.info(f"[{request_id}] Stream generation logic finished.")
+
+
+@router.post("/generate", dependencies=[Depends(verify_api_key)])
+async def generate(
+    files: List[UploadFile] = File(...),
+    damage_imgs: List[UploadFile] | None = File(None),
+    notes: str = Form(""),
+    use_rag: bool = Form(False),
+):
+    # This endpoint now returns a StreamingResponse that calls the generator
+    return StreamingResponse(
+        _stream_report_generation_logic(files, damage_imgs, notes, use_rag),
+        media_type="application/x-ndjson",  # Newline Delimited JSON
+    )
+
+
+# The _generate_and_stream_docx function remains as it might be used by a future /download_report endpoint
+# Ensure it's defined if not already, or remove if truly no longer needed by any path.
+# For this refactor, we assume it's kept for a potential separate download endpoint.
+# If it was at the end of the file, it should still be there.
+# ... (rest of the file, including _generate_and_stream_docx and other helpers if any)
