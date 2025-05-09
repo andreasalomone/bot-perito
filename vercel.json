@@ -14,6 +14,6 @@
     ],
 
     "crons": [
-      { "path": "/api/cleanup", "schedule": "@daily" }
+      { "path": "/api/cleanup", "schedule": "0 0 * * *" }
     ]
   }
