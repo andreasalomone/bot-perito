@@ -13,9 +13,6 @@
 <body>
   <div class="container">
     <h2>Robot Salomone: Generatore di Perizie</h2>
-    <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
-      Carica i documenti per il report
-    </label>
     <form id="frm">
       <!-- API Key field -->
       <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
@@ -31,6 +28,9 @@
                color:var(--text-color); font-size:1rem; margin-bottom:1.5rem;"
       >
       <div class="file-input-wrapper">
+        <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
+          Carica i documenti per il report
+        </label>
         <input type="file" name="files" multiple required class="file-input" accept="image/*,.pdf,.doc,.docx"
           aria-label="Carica i tuoi documenti">
       </div>
