@@ -25,6 +25,35 @@ class Settings(BaseSettings):
     emb_model_name: str = Field("all-MiniLM-L6-v2", env="EMB_MODEL_NAME")
     api_key: str | None = Field(None, env="API_KEY")
 
+    CRITICAL_FIELDS_FOR_CLARIFICATION: dict[str, dict[str, str]] = Field(
+        default_factory=lambda: {
+            "polizza": {
+                "label": "Numero Polizza",
+                "question": "Qual è il numero di polizza?",
+            },
+            "data_danno": {
+                "label": "Data Danno",
+                "question": "Qual è la data esatta del danno (GG/MM/AAAA)?",
+            },
+            "client": {
+                "label": "Cliente",
+                "question": "Qual è la ragione sociale del cliente?",
+            },
+            "assicurato": {
+                "label": "Assicurato",
+                "question": "Qual è la ragione sociale dell'assicurato?",
+            },
+            "luogo": {
+                "label": "Luogo Sinistro",
+                "question": "Dove è avvenuto esattamente il sinistro?",
+            },
+            "cause": {
+                "label": "Causa Sinistro",
+                "question": "Qual è la causa presunta del sinistro?",
+            },
+        }
+    )
+
     model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
 
 

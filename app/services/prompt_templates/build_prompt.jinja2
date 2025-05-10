@@ -27,39 +27,39 @@ Analizza i documenti e restituisci ESCLUSIVAMENTE un JSON valido, senza testo ex
 | accertamenti      | ACCERTAMENTI            | Sez. 2b – descrivi gli accertamenti peritali eseguiti, dove, quando, come, con chi, con chi è stato incaricato, con chi è stato coinvolto, le scoperte peritali degli accertamenti — **senza titolo** –                         |
 | quantificazione   | QUANTIFICAZIONE         | Sez. 3 – quantificazione del danno totale, le cifre come lista puntata o tabella testo, in stile esempio) — **senza titolo**                        |
 | commento          | COMMENTO                | Sez. 4 – sintesi tecnica finale, come da esempio — **senza titolo**                        |
-| allegati          | ALLEGATI                | Elenco allegati in bullet list uno sopra l'altro, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
+| allegati          | ALLEGATI                | Elenco allegati in bullet list uno sopra l'altro, ovvero i tipi di documenti che ha caricato l'utente per la nuova perizia (“Nolo; Fattura; Bolla; Foto 1; Foto 2 …”)                   |
 
                        **senza** intestazione Spett.le ecc.
 
-Se un valore non è rintracciabile, restituisci stringa vuota "".
+Se un valore non è rintracciabile, restituisci JSON `null` (non la stringa "null").
 
 ## Formato di output (rispettare ordine e maiusc/minusc delle chiavi)
 {% raw %}
 {{
-  "client": "",
-  "client_address1": "",
-  "client_address2": "",
-  "date": "",
-  "vs_rif": "",
-  "rif_broker": "",
-  "polizza": "",
-  "ns_rif": "",
-  "assicurato": "",
-  "indirizzo_ass1": "",
-  "indirizzo_ass2": "",
-  "luogo": "",
-  "data_danno": "",
-  "cause": "",
-  "data_incarico": "",
-  "merce": "",
-  "peso_merce": "",
-  "valore_merce": "",
-  "data_intervento": "",
-  "dinamica_eventi": "",
-  "accertamenti": "",
-  "quantificazione": "",
-  "commento": "",
-  "allegati": ""
+  "client": null,
+  "client_address1": null,
+  "client_address2": null,
+  "date": null,
+  "vs_rif": null,
+  "rif_broker": null,
+  "polizza": null,
+  "ns_rif": null,
+  "assicurato": null,
+  "indirizzo_ass1": null,
+  "indirizzo_ass2": null,
+  "luogo": null,
+  "data_danno": null,
+  "cause": null,
+  "data_incarico": null,
+  "merce": null,
+  "peso_merce": null,
+  "valore_merce": null,
+  "data_intervento": null,
+  "dinamica_eventi": null,
+  "accertamenti": null,
+  "quantificazione": null,
+  "commento": null,
+  "allegati": null
 }}
 {% endraw %}
 

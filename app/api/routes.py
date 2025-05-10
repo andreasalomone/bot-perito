@@ -12,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from app.core.config import settings
 from app.core.security import Depends, verify_api_key
 from app.core.validation import validate_upload
+from app.models.report_models import ClarificationPayload, ReportContext
+from app.services.clarification_service import ClarificationService
 from app.services.doc_builder import DocBuilderError, inject
 from app.services.extractor import (
     ExtractorError,
@@ -77,7 +79,8 @@ async def _extract_single_file(
         )
         # Propagate the error to be handled by the gather call
         raise HTTPException(
-            status_code=400, detail=f"Failed to process file {file.filename}"
+            status_code=500,
+            detail="An unexpected error occurred during text extraction.",
         )
 
 
@@ -141,8 +144,8 @@ async def _process_single_image(damage_img: UploadFile, request_id: str) -> str:
             exc_info=True,
         )
         raise HTTPException(
-            status_code=400,
-            detail=f"Failed to process damage image {damage_img.filename}",
+            status_code=500,
+            detail="An unexpected error occurred during image processing.",
         )
 
 
@@ -220,9 +223,7 @@ async def _load_template_excerpt(template_path: str, request_id: str) -> str:
             exc_info=True,
         )
         # This error should be critical for the generation process
-        raise HTTPException(
-            status_code=500, detail="Template loading failed for excerpt"
-        )
+        raise HTTPException(status_code=500, detail="Error loading template excerpt.")
 
 
 async def _retrieve_similar_cases(
@@ -247,7 +248,10 @@ async def _retrieve_similar_cases(
             str(e),
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Failed to retrieve similar cases")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while retrieving similar cases.",
+        )
 
 
 async def _extract_base_context(
@@ -296,6 +300,17 @@ async def _extract_base_context(
             status_code=500, detail=f"JSON parsing for base fields failed: {str(e)}"
         )
     # HTTPException for prompt size is already raised and will be caught by the main handler
+    except Exception as e:
+        if isinstance(e, HTTPException):  # Re-raise if it's already an HTTPException
+            raise e
+        logger.error(
+            "[%s] Unexpected error in base context extraction: %s",  # Clarified log message
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+        # Raise PipelineError for other generic errors to be handled consistently upstream
+        raise PipelineError(f"Unexpected error during base context extraction: {e}")
 
 
 async def _run_processing_pipeline(
@@ -368,9 +383,8 @@ async def _run_processing_pipeline(
             str(e),
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Report generation pipeline failed (id: {request_id})",
+        raise PipelineError(
+            f"An unexpected error occurred in the report generation pipeline: {e}"
         )
 
 
@@ -403,7 +417,8 @@ async def _generate_and_stream_docx(
             exc_info=True,
         )
         raise HTTPException(
-            status_code=500, detail=f"Document generation failed (id: {request_id})"
+            status_code=500,
+            detail="An unexpected error occurred while generating the DOCX document.",
         )
 
 
@@ -424,11 +439,19 @@ async def _stream_report_generation_logic(
         use_rag,
     )
 
-    section_map_from_pipeline = None  # To store the result from pipeline.run
+    # Store original inputs for request_artifacts
+    original_notes = notes
+    original_use_rag = use_rag
+    # `files` and `damage_imgs` are harder to pass directly;
+    # frontend will need to resubmit them if clarification is needed.
+    # The plan specifies:
+    # original_corpus, image_tokens, notes, use_rag, similar_cases_retrieved, initial_llm_base_fields
+    # We will construct these as we go.
+
+    section_map_from_pipeline = None
 
     try:
-        # TemporaryDirectory might be used by underlying functions, keep it scoped
-        with TemporaryDirectory():  # Not strictly used by all helpers, but good for consistency if any need it
+        with TemporaryDirectory():
             template_path_str = str(settings.template_path)
 
             yield json.dumps(
@@ -440,6 +463,7 @@ async def _stream_report_generation_logic(
             corpus, imgs_tokens = await _validate_and_extract_files(
                 files, damage_imgs, request_id
             )
+            # `corpus` here is `original_corpus` for artifacts
             yield json.dumps(
                 {
                     "type": "status",
@@ -463,7 +487,9 @@ async def _stream_report_generation_logic(
                     "message": "Retrieving similar cases (if enabled)...",
                 }
             ) + "\n"
-            similar_cases = await _retrieve_similar_cases(corpus, use_rag, request_id)
+            similar_cases = await _retrieve_similar_cases(
+                corpus, use_rag, request_id
+            )  # `similar_cases` for artifacts
             yield json.dumps(
                 {
                     "type": "status",
@@ -477,17 +503,47 @@ async def _stream_report_generation_logic(
                     "message": "Extracting base document context (LLM)...",
                 }
             ) + "\n"
-            base_ctx = await _extract_base_context(
+            base_ctx = await _extract_base_context(  # `base_ctx` is `initial_llm_base_fields` for artifacts
                 template_excerpt, corpus, imgs_tokens, notes, similar_cases, request_id
             )
             yield json.dumps(
                 {"type": "status", "message": "Base document context extracted."}
             ) + "\n"
 
+            # Clarification Check
+            clarification_service = ClarificationService()
+            missing_info_list = clarification_service.identify_missing_fields(
+                base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION
+            )
+
+            if missing_info_list:
+                logger.info(
+                    "[%s] Clarification needed for %d fields.",
+                    request_id,
+                    len(missing_info_list),
+                )
+                request_artifacts = {
+                    "original_corpus": corpus,
+                    "image_tokens": imgs_tokens,  # These are the base64 encoded image tokens
+                    "notes": original_notes,
+                    "use_rag": original_use_rag,
+                    "similar_cases_retrieved": similar_cases,
+                    "initial_llm_base_fields": base_ctx,
+                }
+                yield json.dumps(
+                    {
+                        "type": "clarification_needed",  # Changed from "status"
+                        "missing_fields": missing_info_list,
+                        "request_artifacts": request_artifacts,
+                    }
+                ) + "\n"
+                return  # Stop the stream here
+
+            # If no clarification needed, proceed with pipeline
             yield json.dumps(
                 {
                     "type": "status",
-                    "message": "Starting main report generation pipeline...",
+                    "message": "No immediate clarifications needed. Starting main report generation pipeline...",
                 }
             ) + "\n"
             pipeline = PipelineService()
@@ -589,6 +645,190 @@ async def generate(
         _stream_report_generation_logic(files, damage_imgs, notes, use_rag),
         media_type="application/x-ndjson",  # Newline Delimited JSON
     )
+
+
+@router.post("/generate-with-clarifications", dependencies=[Depends(verify_api_key)])
+async def generate_with_clarifications(
+    payload: ClarificationPayload,
+    # request: Request # For API key if not using dependency, but dependency is better
+):
+    request_id = str(uuid4())
+    logger.info("[%s] Initiating report generation with clarifications.", request_id)
+
+    try:
+        user_clarifications = payload.clarifications
+        artifacts = payload.request_artifacts
+
+        # The initial_llm_base_fields is a ReportContext object, convert to dict for manipulation
+        base_ctx = artifacts.initial_llm_base_fields.model_dump(exclude_none=True)
+
+        # Merge clarifications: Update base_ctx with user_provided_clarifications
+        # Only update if user provided a non-empty string value
+        for key, value in user_clarifications.items():
+            if value is not None and value.strip() != "":  # Check for non-empty string
+                base_ctx[key] = value
+            elif key in base_ctx and (
+                value is None or value.strip() == ""
+            ):  # If user explicitly empties a field
+                base_ctx[key] = (
+                    None  # Set to None if LLM should treat as missing, or "" if desired
+                )
+
+        # Retrieve necessary items from artifacts
+        original_corpus = artifacts.original_corpus
+        image_tokens = artifacts.image_tokens
+        original_notes = artifacts.notes
+        # original_use_rag = artifacts.use_rag # Not directly used by pipeline.run, similar_cases are passed
+        similar_cases_retrieved = artifacts.similar_cases_retrieved
+
+        template_path_str = str(settings.template_path)
+
+        # 1. Load template excerpt (needed for the pipeline)
+        # This logic is similar to _stream_report_generation_logic
+        # yield_json_status = lambda type, msg: json.dumps({"type": type, "message": msg}) + "\\n" # dummy for non-streaming, not used
+
+        # Re-use _load_template_excerpt. This is okay.
+        template_excerpt = await _load_template_excerpt(template_path_str, request_id)
+
+        # 2. Run processing pipeline (reusing the helper function)
+        # _run_processing_pipeline expects: template_excerpt, corpus, imgs, notes, similar_cases, request_id
+        # It returns section_map
+        logger.info(
+            "[%s] Running processing pipeline with clarifications...", request_id
+        )
+        section_map = await _run_processing_pipeline(
+            template_excerpt=template_excerpt,
+            corpus=original_corpus,
+            imgs=image_tokens,
+            notes=original_notes,
+            similar_cases=similar_cases_retrieved,
+            request_id=request_id,
+            # extra_styles might need to be part of artifacts if dynamic, "" is default
+        )
+        logger.info("[%s] Pipeline processing completed.", request_id)
+
+        # 3. Combine base_ctx (now updated with clarifications) and section_map
+        final_ctx = {**base_ctx, **section_map}
+        logger.debug(
+            "[%s] Final context for DOCX: %s",
+            request_id,
+            json.dumps(final_ctx, indent=2, ensure_ascii=False)[:500] + "...",
+        )
+
+        # 4. Generate and stream DOCX
+        # _generate_and_stream_docx expects: template_path, final_context, request_id
+        # It returns a StreamingResponse
+        logger.info("[%s] Generating DOCX with clarifications...", request_id)
+        docx_response = await _generate_and_stream_docx(
+            template_path=template_path_str,
+            final_context=final_ctx,
+            request_id=request_id,
+        )
+        logger.info("[%s] DOCX generation successful. Returning stream.", request_id)
+        return docx_response
+
+    except HTTPException as he:
+        # Re-raise FastAPI's HTTPExceptions
+        logger.error(
+            "[%s] HTTPException during clarification processing: %s - %s",
+            request_id,
+            he.status_code,
+            he.detail,
+            exc_info=True,
+        )
+        raise he
+    except (
+        PipelineError,
+        DocBuilderError,
+        LLMError,
+        JSONParsingError,
+        RAGError,
+        ExtractorError,
+    ) as e:
+        # Catch specific application errors and return a 500
+        logger.error(
+            "[%s] Application error during clarification processing: %s",
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Report generation failed after clarifications: {str(e)}",
+        )
+    except Exception as e:
+        # Catch-all for any other unexpected errors
+        logger.error(
+            "[%s] Unexpected error during clarification processing: %s",
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected server error occurred while generating the report with clarifications (id: {request_id}).",
+        )
+
+
+@router.post("/finalize-report", dependencies=[Depends(verify_api_key)])
+async def finalize_report(
+    final_ctx_payload: ReportContext,  # Expecting the full context
+):
+    request_id = str(uuid4())
+    logger.info("[%s] Initiating report finalization and DOCX generation.", request_id)
+
+    try:
+        template_path_str = str(settings.template_path)
+
+        # Ensure final_ctx_payload is a dictionary for _generate_and_stream_docx
+        # Pydantic model ensures structure; model_dump provides the dict.
+        final_context_dict = final_ctx_payload.model_dump(exclude_none=True)
+
+        logger.info("[%s] Generating DOCX from final context...", request_id)
+        docx_response = await _generate_and_stream_docx(
+            template_path=template_path_str,
+            final_context=final_context_dict,
+            request_id=request_id,
+        )
+        logger.info(
+            "[%s] DOCX generation successful for finalization. Returning stream.",
+            request_id,
+        )
+        return docx_response
+
+    except HTTPException as he:
+        logger.error(
+            "[%s] HTTPException during report finalization: %s - %s",
+            request_id,
+            he.status_code,
+            he.detail,
+            exc_info=True,
+        )
+        raise he
+    except (
+        DocBuilderError
+    ) as e:  # Specifically for errors from _generate_and_stream_docx
+        logger.error(
+            "[%s] DocBuilderError during report finalization: %s",
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Report finalization document builder error: {str(e)}",
+        )
+    except Exception as e:
+        logger.error(
+            "[%s] Unexpected error during report finalization: %s",
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected server error occurred during report finalization (id: {request_id}).",
+        )
 
 
 # The _generate_and_stream_docx function remains as it might be used by a future /download_report endpoint
