@@ -65,11 +65,13 @@ form.addEventListener('submit', async (e) => {
 
     if (!response.ok) {
       let errorMsg = `Errore del server: ${response.status}`;
+      const responseText = await response.text(); // Read as text first
       try {
-        const errorData = await response.json();
+        const errorData = JSON.parse(responseText); // Try to parse the text as JSON
         errorMsg = errorData.detail || errorData.message || errorMsg;
       } catch (jsonError) {
-        errorMsg = await response.text() || errorMsg;
+        // If JSON.parse fails, use the responseText if it's not empty, otherwise stick to the initial errorMsg
+        errorMsg = responseText || errorMsg;
       }
       throw new Error(errorMsg);
     }
@@ -154,11 +156,13 @@ async function fetchAndDownloadReport(finalCtx, statusElem, spinnerElem) {
 
     if (!response.ok) {
       let errorMsg = `Errore durante la finalizzazione del report: ${response.status}`;
+      const responseText = await response.text(); // Read as text first
       try {
-        const errorData = await response.json();
+        const errorData = JSON.parse(responseText); // Try to parse the text as JSON
         errorMsg = errorData.detail || errorData.message || errorMsg;
       } catch (jsonError) {
-        errorMsg = await response.text() || errorMsg;
+        // If JSON.parse fails, use the responseText if it's not empty, otherwise stick to the initial errorMsg
+        errorMsg = responseText || errorMsg;
       }
       throw new Error(errorMsg);
     }
@@ -313,11 +317,13 @@ async function handleSubmitClarifications() {
 
     if (!response.ok) {
       let errorMsg = `Errore durante la generazione con chiarimenti: ${response.status}`;
+      const responseText = await response.text(); // Read as text first
       try {
-        const errorData = await response.json(); // Try to parse JSON error
+        const errorData = JSON.parse(responseText); // Try to parse the text as JSON
         errorMsg = errorData.detail || errorData.message || errorMsg;
       } catch (jsonError) {
-        errorMsg = await response.text() || errorMsg; // Fallback to text error
+        // If JSON.parse fails, use the responseText if it's not empty, otherwise stick to the initial errorMsg
+        errorMsg = responseText || errorMsg;
       }
       throw new Error(errorMsg);
     }

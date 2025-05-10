@@ -113,11 +113,29 @@ button:active {
 }
 
 #spin {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   margin: 2rem auto;
-  position: relative;
-  width: 40px;
-  height: 40px;
+  padding: 1rem;
+  text-align: center;
+}
+
+#spin .spinner {
+  margin-bottom: 1rem;
+}
+
+#spin p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  max-width: 100%;
+  font-size: 1em;
+  color: var(--text-muted);
+}
+
+#spin p#status-message {
+  font-size: 0.9em;
 }
 
 @keyframes spinner {
