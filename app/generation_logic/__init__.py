@@ -14,8 +14,5 @@ from .context_preparation import (  # noqa: F401
 
 # Re-export most commonly-used helpers for convenience
 from .file_processing import _validate_and_extract_files  # noqa: F401
-from .report_finalization import (  # noqa: F401
-    _generate_and_stream_docx,
-    _run_processing_pipeline,
-)
+from .report_finalization import _generate_and_stream_docx  # noqa: F401
 from .stream_orchestrator import _stream_report_generation_logic  # noqa: F401

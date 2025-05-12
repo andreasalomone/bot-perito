@@ -2,244 +2,88 @@ from __future__ import annotations
 
 import json
 import logging
-import pathlib
-from typing import Any, AsyncGenerator, Dict, List
-from uuid import uuid4
+from typing import AsyncGenerator, List
 
-import jinja2
+from app.services.harmonization_service import HarmonizationService
 
-from app.services.llm import JSONParsingError, LLMError, call_llm, extract_json
+# Assuming LLMError might still be caught in run, if not, remove.
+from app.services.llm import LLMError
+
+# Import the new step services
+from app.services.outline_service import OutlineService
+from app.services.section_expansion_service import SectionExpansionService
+
+# Removed jinja2 import as template handling is in llm.py
+# import jinja2
+
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-# Initialize Jinja2 environment
-PROMPT_DIR = pathlib.Path(__file__).parent / "prompt_templates"
-loader = jinja2.FileSystemLoader(PROMPT_DIR)
-env = jinja2.Environment(loader=loader)
+# Removed Jinja2 environment setup
+# PROMPT_DIR = ...
+# loader = ...
+# env = ...
 
 
 class PipelineError(Exception):
-    """Base exception for pipeline-related errors"""
+    """Base exception for pipeline-related errors (Defined centrally here)"""
+
+
+class ConfigurationError(PipelineError):
+    """Exception for configuration-related errors (e.g., missing templates)"""
 
 
 class PipelineService:
-    """Pipeline multi-step: outline → sezioni → armonizzazione."""
+    """Orchestrates the report generation pipeline using dedicated step services."""
 
     def __init__(self):
-        logger.info("Initializing PipelineService")
-        # Funzione embed (Hugging Face API) per eventuale chunking locale
-        # self.chunk_model = embed
+        logger.info("Initializing PipelineService with step services")
+        # Instantiate step services (can use DI later)
+        self.outline_service = OutlineService()
+        self.section_expansion_service = SectionExpansionService()
+        self.harmonization_service = HarmonizationService()
+        # self.chunk_model = embed # Keep if needed
 
-    async def generate_outline(
-        self,
-        template_excerpt: str,
-        corpus: str,
-        notes: str,
-    ) -> List[Dict[str, Any]]:
-        """
-        Step 1: genera un outline JSON con titoli e bullet points per ciascuna sezione.
-        Restituisce lista di titoli di sezione.
-        """
-        request_id = str(uuid4())
-        logger.info("[%s] Generating outline", request_id)
-
-        try:
-            # Load and render prompt template
-            template = env.get_template("generate_outline_prompt.jinja2")
-            prompt = template.render(
-                template_excerpt=template_excerpt,
-                corpus=corpus,
-                notes=notes,
-            )
-            raw = await call_llm(prompt)
-            data = extract_json(raw)
-
-            if not isinstance(data, list) or not data:
-                logger.error(
-                    "[%s] Invalid outline format returned from LLM", request_id
-                )
-                raise PipelineError("Invalid outline format")
-
-            logger.info(
-                "[%s] Successfully generated outline with %d sections",
-                request_id,
-                len(data),
-            )
-            return data
-
-        except (LLMError, JSONParsingError) as e:
-            logger.error(
-                "[%s] Failed to generate outline: %s", request_id, str(e), exc_info=True
-            )
-            raise PipelineError("Failed to generate outline") from e
-        except PipelineError:  # Specifically catch and re-raise PipelineErrors
-            raise
-        except Exception as e:
-            logger.exception("[%s] Unexpected error in generate_outline", request_id)
-            raise PipelineError("Unexpected error in outline generation") from e
-
-    async def expand_section(
-        self,
-        section: Dict[str, Any],
-        context: Dict[str, Any],
-    ) -> str:
-        """
-        Step 2: per ciascuna sezione, espandi con almeno 200 parole.
-        context include template_excerpt, corpus, notes, e outline completo.
-        """
-        request_id = str(uuid4())
-        sec_key = section["section"]
-        title = section["title"]
-        bullets = section["bullets"]
-
-        logger.info(
-            "[%s] Expanding section '%s' with %d bullets",
-            request_id,
-            title,
-            len(bullets),
-        )
-
-        try:
-            current_extra_styles = context.get("extra_styles", "")
-            section_questions = {
-                "dinamica_eventi": "Chi, cosa, quando, dove e perché è avvenuto il sinistro?",
-                "accertamenti": "Quali prove fotografiche e rilievi del danno sono stati eseguiti? Chi, dove e quando?",
-                "quantificazione": "Dettaglia costi totali del danno come lista puntata o tabella testo.",
-                "commento": "Fornisci una sintesi tecnica finale e le raccomandazioni.",
-            }
-            section_question = " e ".join(section_questions.get(sec_key, ""))
-
-            # Load and render prompt template
-            template = env.get_template("expand_section_prompt.jinja2")
-            prompt = template.render(
-                title=title,
-                sec_key=sec_key,
-                bullets=str(bullets),
-                section_question=section_question,
-                corpus=context["corpus"],
-                template_excerpt=context["template_excerpt"],
-                notes=context["notes"],
-                current_extra_styles=current_extra_styles,
-            )
-
-            raw = await call_llm(prompt)
-            out = extract_json(raw)
-            content = out.get(sec_key, "")
-
-            if not content:
-                logger.error(
-                    "[%s] Empty content returned for section '%s'", request_id, title
-                )
-                raise PipelineError(f"Empty content for section {title}")
-
-            logger.info(
-                "[%s] Successfully expanded section '%s' to %d chars",
-                request_id,
-                title,
-                len(content),
-            )
-            return content
-
-        except (LLMError, JSONParsingError) as e:
-            logger.error(
-                "[%s] Failed to expand section '%s': %s",
-                request_id,
-                title,
-                str(e),
-                exc_info=True,
-            )
-            raise PipelineError(f"Failed to expand section {title}") from e
-        except PipelineError:
-            raise
-        except Exception as e:
-            logger.exception(
-                "[%s] Unexpected error expanding section '%s'", request_id, title
-            )
-            raise PipelineError(f"Unexpected error expanding section {title}") from e
-
-    async def harmonize(
-        self, sections: Dict[str, str], extra_styles: str
-    ) -> Dict[str, str]:
-        """
-        Step 3: unisci e uniforma lo stile.
-        """
-        request_id = str(uuid4())
-        logger.info("[%s] Harmonizing %d sections", request_id, len(sections))
-
-        try:
-            # Define the joiner string separately to satisfy Black's AST parser
-            section_joiner = "\\n\\n"
-            sections_input_for_prompt = section_joiner.join(
-                f'\\"{k}\\": \\"\\"\\"{json.dumps(v)[1:-1]}\\"\\"\\"'
-                for k, v in sections.items()
-            )
-
-            # Load and render prompt template
-            template = env.get_template("harmonize_prompt.jinja2")
-            prompt = template.render(
-                sections_input_for_prompt=sections_input_for_prompt,
-                extra_styles_example=extra_styles,
-            )
-
-            raw_response = await call_llm(prompt)
-            harmonized_data = extract_json(raw_response)
-
-            if not isinstance(harmonized_data, dict) or not all(
-                key in harmonized_data for key in sections.keys()
-            ):
-                logger.error(
-                    "[%s] Invalid or incomplete harmonization result: %s",
-                    request_id,
-                    harmonized_data,
-                )
-                raise PipelineError(
-                    "Harmonization returned invalid structure or missed sections."
-                )
-
-            logger.info(
-                "[%s] Successfully harmonized sections. Keys: %s",
-                request_id,
-                list(harmonized_data.keys()),
-            )
-            return harmonized_data
-
-        except (LLMError, JSONParsingError) as e:
-            logger.error(
-                "[%s] Failed to harmonize sections due to LLM/JSON error: %s",
-                request_id,
-                str(e),
-                exc_info=True,
-            )
-            raise PipelineError(f"Failed to harmonize sections: {str(e)}") from e
-        except PipelineError:
-            raise
-        except Exception as e:
-            logger.exception("[%s] Unexpected error in harmonization", request_id)
-            raise PipelineError("Unexpected error in harmonization") from e
+    # Removed generate_outline method
+    # Removed expand_section method
+    # Removed harmonize method
 
     async def run(
         self,
+        request_id: str,
         template_excerpt: str,
         corpus: str,
-        imgs: List[str],
+        imgs: List[str],  # Keep imgs param even if not used in current steps
         notes: str,
         extra_styles: str,
     ) -> AsyncGenerator[str, None]:
-        request_id = str(uuid4())
         logger.info(
             "[%s] Starting pipeline run with corpus length %d", request_id, len(corpus)
         )
-        yield json.dumps(
-            {"type": "status", "message": "Initializing report generation..."}
-        )
-
         try:
+            yield json.dumps(
+                {"type": "status", "message": "Initializing report generation..."}
+            )
+
+            # Input validation (Keep TODO or implement proper validation service call)
+            # TODO: Replace these basic checks with a call to a dedicated InputValidationService
+            #       or integrate with ClarificationService if its scope changes.
+            if not template_excerpt:
+                raise PipelineError(
+                    "Input validation failed: Template excerpt is missing."
+                )
+            if not corpus:
+                raise PipelineError("Input validation failed: Corpus is missing.")
+            # Add checks for other critical inputs as needed
+
             yield json.dumps(
                 {"type": "status", "message": "Generating report outline..."}
             )
-            # 1. Outline
-            outline = await self.generate_outline(template_excerpt, corpus, notes)
+            # 1. Outline - Use OutlineService
+            outline = await self.outline_service.generate_outline(
+                request_id, template_excerpt, corpus, notes
+            )
             yield json.dumps(
                 {
                     "type": "status",
@@ -247,28 +91,31 @@ class PipelineService:
                 }
             )
 
-            # 2. Context dictionary
-            context = {
-                "corpus": corpus,
-                "template_excerpt": template_excerpt,
-                "notes": notes,
-                "extra_styles": extra_styles,
-            }
+            # Context dictionary preparation is still useful here
+            # for passing necessary data between steps if needed, but primarily for expansion
+            current_extra_styles = extra_styles  # Reuse variable name for clarity
 
             yield json.dumps(
                 {"type": "status", "message": "Expanding report sections..."}
             )
-            # 3. Espandi sezioni
+            # 3. Espandi sezioni - Use SectionExpansionService
             sections = {}
             for i, sec_outline_item in enumerate(outline):
-                # ADDED: Detailed status for each section
                 yield json.dumps(
                     {
                         "type": "status",
                         "message": f"Expanding section {i + 1}/{len(outline)}: {sec_outline_item['title']}...",
                     }
                 )
-                text = await self.expand_section(sec_outline_item, context)
+                # Call the SectionExpansionService method
+                text = await self.section_expansion_service.expand_section(
+                    request_id,
+                    sec_outline_item,
+                    corpus,  # Pass corpus directly
+                    template_excerpt,  # Pass template_excerpt directly
+                    notes,  # Pass notes directly
+                    current_extra_styles,  # Pass styles directly
+                )
                 sections[sec_outline_item["section"]] = text
                 yield json.dumps(
                     {
@@ -280,8 +127,10 @@ class PipelineService:
             yield json.dumps(
                 {"type": "status", "message": "Harmonizing report content..."}
             )
-            # 4. Armonizza
-            harmonized_sections_dict = await self.harmonize(sections, extra_styles)
+            # 4. Armonizza - Use HarmonizationService
+            harmonized_sections_dict = await self.harmonization_service.harmonize(
+                request_id, sections, extra_styles
+            )
             yield json.dumps(
                 {"type": "status", "message": "Content harmonization complete."}
             )
@@ -289,28 +138,40 @@ class PipelineService:
             logger.info("[%s] Pipeline completed successfully", request_id)
 
             # 5. Restituisci mappa per doc_builder
-            # MODIFIED: Yield final data with a 'data' type
             yield json.dumps({"type": "data", "payload": harmonized_sections_dict})
 
         except PipelineError as e:
+            error_message = f"Pipeline Error: {str(e)}"
             logger.error(
                 "[%s] Pipeline run failed due to PipelineError: %s",
                 request_id,
                 str(e),
-                exc_info=False,
+                exc_info=False,  # Keep false as lower layers should log details
             )
-            yield json.dumps(
-                {"type": "error", "message": f"A problem occurred: {str(e)}"}
+            yield json.dumps({"type": "error", "message": error_message})
+        except LLMError as e:  # Catch LLMError explicitly if it can bubble up
+            error_message = f"LLM Service Error: {str(e)}"
+            logger.error(
+                "[%s] Pipeline run failed due to LLMError: %s",
+                request_id,
+                str(e),
+                exc_info=False,  # Keep false as lower layers should log details
             )
-            raise
+            yield json.dumps({"type": "error", "message": error_message})
         except Exception as e:
+            error_message = f"An unexpected problem occurred in the pipeline: {str(e)}"
             logger.exception(
                 "[%s] Pipeline run failed with unexpected error", request_id
             )
             yield json.dumps(
                 {
                     "type": "error",
-                    "message": f"An unexpected problem occurred: {str(e)}",
+                    "message": error_message,
                 }
             )
-            raise PipelineError("Pipeline execution failed") from e
+        finally:
+            # Ensure the 'finished' event is always sent
+            logger.info("[%s] Pipeline processing finished.", request_id)
+            yield json.dumps(
+                {"type": "finished", "message": "Pipeline processing complete."}
+            )

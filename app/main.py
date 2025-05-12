@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import router
+from app.core.config import settings
 from app.core.logging import setup_logging
 from app.services.doc_builder import DocBuilderError
 from app.services.llm import JSONParsingError, LLMError
@@ -51,13 +52,7 @@ async def jsonparsing_exception_handler(request, exc):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[  # allow local dev
-        "https://aiperito.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "https://localhost:3000",
-        "https://localhost:8000",
-    ],
+    allow_origins=settings.cors_allowed_origins,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )

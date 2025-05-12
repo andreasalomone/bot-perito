@@ -1,17 +1,5 @@
 from typing import Any, Dict, List
 
-# This can be moved to app/core/config.py later
-# CRITICAL_FIELDS_FOR_CLARIFICATION: Dict[str, Dict[str, str]] = {
-#     "polizza": {"label": "Numero Polizza", "question": "Qual è il numero di polizza?"},
-#     "data_danno": {"label": "Data Danno", "question": "Qual è la data esatta del danno (GG/MM/AAAA)?"},
-#     # Add other fields deemed critical for clarification here
-#     # For example:
-#     # "client": {"label": "Cliente", "question": "Qual è la ragione sociale del cliente?"},
-#     # "assicurato": {"label": "Assicurato", "question": "Qual è la ragione sociale dell'assicurato?"},
-#     # "luogo": {"label": "Luogo Sinistro", "question": "Dove è avvenuto esattamente il sinistro?"},
-#     # "cause": {"label": "Causa Sinistro", "question": "Qual è la causa presunta del sinistro?"},
-# }
-
 
 class ClarificationService:
     def identify_missing_fields(

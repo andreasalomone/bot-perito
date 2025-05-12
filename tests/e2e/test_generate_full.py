@@ -98,7 +98,7 @@ def test_generate_full_happy_path(monkeypatch):
 
     # Updated FakePipeline mock
     class FakePipeline:
-        async def run(self, tpl, corpus, imgs, notes, similar_cases, extra_styles):
+        async def run(self, tpl, corpus, imgs, notes, extra_styles):
             pipeline_payload = {
                 "dinamica_eventi": "dyn_pipeline_stream",
                 "accertamenti": "acc_pipeline_stream",
@@ -118,7 +118,7 @@ def test_generate_full_happy_path(monkeypatch):
     response = local_client.post(
         "/generate",
         files=[("files", ("dummy.pdf", b"dummy content for file", "application/pdf"))],
-        data={"notes": "some notes for the test", "use_rag": "false"},
+        data={"notes": "some notes for the test"},
         headers={"X-API-Key": "secret"},
     )
 

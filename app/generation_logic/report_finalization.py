@@ -2,14 +2,12 @@ import json
 import logging
 from typing import Any, Dict
 
-from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.services.doc_builder import DocBuilderError, inject
-from app.services.pipeline import PipelineError, PipelineService
+from app.services.pipeline import PipelineError
 
 __all__ = [
-    "_run_processing_pipeline",
     "_generate_and_stream_docx",
     "DEFAULT_REPORT_FILENAME",
     "DOCX_MEDIA_TYPE",
@@ -22,86 +20,6 @@ DEFAULT_REPORT_FILENAME = "report.docx"
 DOCX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
-
-
-async def _run_processing_pipeline(
-    template_excerpt: str,
-    corpus: str,
-    imgs: list[str],
-    notes: str,
-    request_id: str,
-) -> Dict[str, Any]:
-    """Execute the main content-generation pipeline synchronously, returning the
-    section map once complete.
-    """
-    try:
-        pipeline = PipelineService()
-        section_map: Dict[str, Any] | None = None
-
-        async for update_json_str in pipeline.run(
-            template_excerpt,
-            corpus,
-            imgs,
-            notes,
-            extra_styles="",
-        ):
-            try:
-                update_data = json.loads(update_json_str)
-                if update_data.get("type") == "data" and "payload" in update_data:
-                    section_map = update_data["payload"]
-                    break
-                elif update_data.get("type") == "error":
-                    error_message = update_data.get(
-                        "message",
-                        "Unknown pipeline error during non-streaming generation",
-                    )
-                    logger.error(
-                        "[%s] Pipeline error during non-streaming generation: %s",
-                        request_id,
-                        error_message,
-                    )
-                    raise PipelineError(error_message)
-            except json.JSONDecodeError:
-                logger.warning(
-                    "[%s] Non-JSON message from pipeline during non-streaming generation: %s",
-                    request_id,
-                    update_json_str,
-                )
-                raise PipelineError(
-                    "Received malformed data from pipeline during non-streaming generation."
-                )
-
-        if section_map is None:
-            logger.error(
-                "[%s] Pipeline finished without returning section map.", request_id
-            )
-            raise PipelineError("Pipeline did not return the expected section map.")
-
-        logger.info(
-            "[%s] Pipeline processing completed successfully (non-streaming).",
-            request_id,
-        )
-        return section_map
-    except PipelineError as e:
-        logger.error(
-            "[%s] PipelineError in _run_processing_pipeline: %s",
-            request_id,
-            str(e),
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Pipeline processing failed: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(
-            "[%s] Unexpected error in _run_processing_pipeline: %s",
-            request_id,
-            str(e),
-            exc_info=True,
-        )
-        raise PipelineError(
-            f"An unexpected error occurred in the report generation pipeline: {e}"
-        )
 
 
 async def _generate_and_stream_docx(
@@ -126,7 +44,7 @@ async def _generate_and_stream_docx(
         logger.error(
             "[%s] Document builder error: %s", request_id, str(e), exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"Document builder error: {str(e)}")
+        raise e
     except Exception as e:
         logger.error(
             "[%s] Failed to generate final document: %s",
@@ -134,7 +52,6 @@ async def _generate_and_stream_docx(
             str(e),
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred while generating the DOCX document.",
-        )
+        raise PipelineError(
+            "An unexpected error occurred while generating the final DOCX document."
+        ) from e

@@ -88,7 +88,6 @@ def test_build_prompt_sections(monkeypatch):
         corpus="CORPUS",
         images=["IMG1", "IMG2"],
         notes="NOTES",
-        similar_cases=[{"title": "Case1", "content_snippet": "Snippet1"}],
     )
 
     # Verify composition
@@ -98,8 +97,6 @@ def test_build_prompt_sections(monkeypatch):
     assert "STYLE_SAMPLE" in prompt
     assert "FOTO_DANNI_BASE64" in prompt
     assert "IMG1" in prompt and "IMG2" in prompt
-    assert "CASI_SIMILI" in prompt
-    assert "[Case1]" in prompt and "Snippet1" in prompt
 
 
 def test_build_prompt_no_vision_or_styles(monkeypatch):
@@ -114,8 +111,6 @@ def test_build_prompt_no_vision_or_styles(monkeypatch):
         corpus="C",
         images=["IMG"],
         notes="N",
-        similar_cases=None,
     )
 
     assert "FOTO_DANNI_BASE64:\n" not in prompt
-    assert "CASI_SIMILI" not in prompt

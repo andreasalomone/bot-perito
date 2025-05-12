@@ -1,3 +1,5 @@
+# This file serves as the entry point for a Vercel Serverless Function / Cron Job.
+# It imports the actual cleanup logic from the core application module.
 from app.core.cleanup import cleanup_tmp
 
 

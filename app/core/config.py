@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     max_images_in_report: int = Field(10, env="MAX_IMAGES_IN_REPORT")
 
     api_key: str | None = Field(None, env="API_KEY")
+
+    cors_allowed_origins: list[str] = Field(
+        default=[
+            "https://aiperito.vercel.app",
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://localhost:3000",
+            "https://localhost:8000",
+        ],
+        env="CORS_ALLOWED_ORIGINS",
+    )
 
     CRITICAL_FIELDS_FOR_CLARIFICATION: dict[str, dict[str, str]] = Field(
         default_factory=lambda: {
@@ -51,6 +62,22 @@ class Settings(BaseSettings):
     )
 
     model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v):
+        if isinstance(v, str) and v:
+            return [origin.strip() for origin in v.split(",")]
+        elif isinstance(v, list):
+            return v
+        # Return the default if env var is empty or not a string/list
+        return [
+            "https://aiperito.vercel.app",
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://localhost:3000",
+            "https://localhost:8000",
+        ]
 
 
 settings = Settings()  # type: ignore[call-arg]

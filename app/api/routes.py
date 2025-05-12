@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import Any, Dict, List
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -16,6 +16,7 @@ from app.models.report_models import ClarificationPayload, ReportContext
 
 # Error classes re-used in endpoint-level exception handling --------------
 from app.services.doc_builder import DocBuilderError
+from app.services.pipeline import PipelineError
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -39,8 +40,10 @@ async def generate(
 
 
 @router.post("/generate-with-clarifications", dependencies=[Depends(verify_api_key)])
-async def generate_with_clarifications(payload: ClarificationPayload):
-    """Endpoint delegation to the generation logic clarification flow."""
+async def generate_with_clarifications(payload: ClarificationPayload) -> Dict[str, Any]:
+    """Receives clarifications, runs the pipeline, and returns the final JSON context.
+    The client must then call /finalize-report to get the DOCX.
+    """
     return await build_report_with_clarifications(payload)
 
 
@@ -67,15 +70,6 @@ async def finalize_report(
         )
         return docx_response
 
-    except HTTPException as he:
-        logger.error(
-            "[%s] HTTPException during report finalization: %s - %s",
-            request_id,
-            he.status_code,
-            he.detail,
-            exc_info=True,
-        )
-        raise he
     except DocBuilderError as e:
         logger.error(
             "[%s] DocBuilderError during report finalization: %s",
@@ -87,6 +81,14 @@ async def finalize_report(
             status_code=500,
             detail=f"Report finalization document builder error: {str(e)}",
         )
+    except PipelineError as e:
+        logger.error(
+            "[%s] PipelineError during report finalization: %s",
+            request_id,
+            str(e),
+            exc_info=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(
             "[%s] Unexpected error during report finalization: %s",

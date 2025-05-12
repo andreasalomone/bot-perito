@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 
 class ReportContext(BaseModel):
+    """Represents the core data fields extracted or generated for a report."""
+
     client: Optional[str] = None
     client_address1: Optional[str] = None
     client_address2: Optional[str] = None
@@ -20,21 +22,19 @@ class ReportContext(BaseModel):
     cause: Optional[str] = None
     data_incarico: Optional[str] = None
     merce: Optional[str] = None
-    peso_merce: Optional[str] = (
-        None  # Should this be Optional[float] or Optional[int]? Assuming string for now based on prompt.
-    )
-    valore_merce: Optional[str] = (
-        None  # Should this be Optional[float] or Optional[int]? Assuming string for now.
-    )
+    peso_merce: Optional[str] = None
+    valore_merce: Optional[str] = None
     data_intervento: Optional[str] = None
     dinamica_eventi: Optional[str] = None
     accertamenti: Optional[str] = None
     quantificazione: Optional[str] = None
     commento: Optional[str] = None
-    allegati: Optional[str] = None  # Could also be List[str], but prompt example has ""
+    allegati: Optional[List[str]] = None
 
 
 class RequestArtifacts(BaseModel):
+    """Holds intermediate artifacts and context passed between report generation steps."""
+
     original_corpus: str
     image_tokens: List[str]  # From the plan, this is what `imgs` corresponds to
     notes: str
@@ -44,7 +44,7 @@ class RequestArtifacts(BaseModel):
 
 
 class ClarificationPayload(BaseModel):
-    clarifications: Dict[
-        str, Optional[str]
-    ]  # User might provide empty strings, treat as str
+    """Defines the structure for receiving user clarifications."""
+
+    clarifications: Dict[str, Optional[str]]  # Removed redundant comment
     request_artifacts: RequestArtifacts

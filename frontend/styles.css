@@ -163,3 +163,90 @@ button:active {
     font-size: 1.875rem;
   }
 }
+
+/* Styles for API Key Input */
+#api_key {
+  width: 100%;
+  padding: 1rem;
+  background: var(--background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  color: var(--text-color);
+  font-size: 1rem;
+  margin-bottom: 1.5rem;
+  box-sizing: border-box; /* Ensure padding doesn't increase size */
+}
+
+#api_key:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+/* Styles for Clarification UI */
+#clarification-ui {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  background-color: var(--background-color); /* Slightly different bg? */
+}
+
+.clarification-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: var(--text-color);
+}
+
+.clarification-field-container {
+  margin-bottom: 1rem;
+}
+
+.clarification-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.clarification-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background-color: var(--card-background); /* Match container bg? */
+  color: var(--text-color);
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.clarification-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+.clarification-submit-button {
+  /* Reuse existing button styles by adding its class or defining here */
+  width: 100%;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.5rem; /* Slightly smaller padding? */
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 1rem;
+}
+
+.clarification-submit-button:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.clarification-submit-button:active {
+  transform: translateY(0);
+}

@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 
 from app.core.config import settings
 from app.generation_logic.context_preparation import (
@@ -15,8 +15,13 @@ from app.services.clarification_service import ClarificationService
 from app.services.doc_builder import (  # For completeness in error handling
     DocBuilderError,
 )
+from app.services.extractor import ExtractorError  # Added ExtractorError
 from app.services.llm import JSONParsingError, LLMError
-from app.services.pipeline import PipelineError, PipelineService
+from app.services.pipeline import (  # Added ConfigurationError
+    ConfigurationError,
+    PipelineError,
+    PipelineService,
+)
 
 __all__ = [
     "_create_stream_event",
@@ -143,10 +148,11 @@ async def _stream_report_generation_logic(
         # ------------------------------------------------------------------
         pipeline = PipelineService()
         async for pipeline_update_json_str in pipeline.run(
-            template_excerpt,
-            corpus,
-            img_tokens,
-            notes,
+            request_id=request_id,
+            template_excerpt=template_excerpt,
+            corpus=corpus,
+            imgs=img_tokens,
+            notes=notes,
             extra_styles="",
         ):
             try:
@@ -204,41 +210,60 @@ async def _stream_report_generation_logic(
     # ----------------------------------------------------------------------
     # Error handling
     # ----------------------------------------------------------------------
-    except HTTPException as he:
-        logger.warning(
-            "[%s] HTTPException during stream: %s - %s",
+    except ConfigurationError as ce:  # Catch specific configuration errors
+        logger.error(
+            "[%s] ConfigurationError during stream: %s",
             request_id,
-            he.status_code,
-            he.detail,
+            str(ce),
+            exc_info=False,
         )
-        yield _create_stream_event("error", message=str(he.detail))
+        yield _create_stream_event("error", message=f"Configuration error: {str(ce)}")
+    except ExtractorError as ee:  # Catch specific extractor errors
+        logger.error(
+            "[%s] ExtractorError during stream: %s", request_id, str(ee), exc_info=False
+        )
+        yield _create_stream_event("error", message=f"File extraction error: {str(ee)}")
     except PipelineError as pe:
         logger.error(
             "[%s] PipelineError during stream orchestration: %s",
             request_id,
             str(pe),
-            exc_info=True,
+            exc_info=False,  # Usually logged deeper if it's a re-raise
         )
         yield _create_stream_event(
             "error", message=f"Pipeline processing error: {str(pe)}"
         )
-    except (
-        DocBuilderError,
-        LLMError,
-        JSONParsingError,
-    ) as known_exc:
+    except LLMError as le:  # Specific LLM errors
         logger.error(
-            "[%s] Known error during stream: %s",
-            request_id,
-            str(known_exc),
-            exc_info=True,
+            "[%s] LLMError during stream: %s", request_id, str(le), exc_info=False
         )
-        yield _create_stream_event("error", message=str(known_exc))
-    except Exception as e:
+        yield _create_stream_event(
+            "error", message=f"Language model processing error: {str(le)}"
+        )
+    except JSONParsingError as jpe:  # Specific JSON parsing errors
+        logger.error(
+            "[%s] JSONParsingError during stream: %s",
+            request_id,
+            str(jpe),
+            exc_info=False,
+        )
+        yield _create_stream_event("error", message=f"Data parsing error: {str(jpe)}")
+    except DocBuilderError as dbe:  # Specific DocBuilder errors
+        logger.error(
+            "[%s] DocBuilderError during stream: %s",
+            request_id,
+            str(dbe),
+            exc_info=False,
+        )
+        yield _create_stream_event(
+            "error", message=f"Document generation error: {str(dbe)}"
+        )
+    except Exception as e:  # General catch-all MUST be last
         logger.exception(
             "[%s] Unexpected error during report generation stream: %s",
             request_id,
             str(e),
+            exc_info=True,  # Log full trace for truly unexpected errors
         )
         yield _create_stream_event(
             "error", message=f"An unexpected server error occurred: {str(e)}"

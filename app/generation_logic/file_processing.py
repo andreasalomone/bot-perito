@@ -7,6 +7,7 @@ from fastapi import HTTPException, UploadFile
 from app.core.config import settings
 from app.core.validation import validate_upload
 from app.services.extractor import ExtractorError, extract, guard_corpus
+from app.services.pipeline import PipelineError
 
 __all__ = [
     "_extract_single_file",
@@ -75,9 +76,9 @@ async def _extract_single_file(
             request_id,
             file.filename,
             str(e),
-            exc_info=True,
+            exc_info=False,
         )
-        raise HTTPException(status_code=400, detail=str(e))
+        raise
     except Exception as e:
         logger.error(
             "[%s] Failed to extract from %s: %s",
@@ -86,10 +87,7 @@ async def _extract_single_file(
             str(e),
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred during text extraction.",
-        )
+        raise PipelineError(f"Unexpected error extracting file: {file.filename}") from e
 
 
 async def extract_texts(

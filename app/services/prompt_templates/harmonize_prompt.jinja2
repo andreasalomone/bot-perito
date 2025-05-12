@@ -2,7 +2,7 @@ Data la seguente bozza di sezioni di una perizia e un esempio di stile, rivedi e
 Assicurati che ogni sezione mantenga il suo focus originale ma sia migliorata stilisticamente in base all'esempio fornito.
 
 BOZZA SEZIONI DA ARMONIZZARE:
-{{ '{' }}{{ sections_input_for_prompt }}{{ '}' }}
+{{ sections_dict | tojson(indent=2) }}
 
 ESEMPIO DI STILE (PER GUIDARE LA REVISIONE):
 <<<

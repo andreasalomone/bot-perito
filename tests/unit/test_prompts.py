@@ -57,7 +57,6 @@ def test_build_prompt_all_data_with_vision(
         corpus="Corpus data",
         images=["image1_base64", "image2_base64"],
         notes="Notes data",
-        similar_cases=[{"title": "Case 1", "content_snippet": "Snippet 1"}],
     )
     assert "Excerpt data" in prompt
     assert "Corpus data" in prompt
@@ -67,8 +66,6 @@ def test_build_prompt_all_data_with_vision(
     assert "image1_base64" in prompt
     assert "image2_base64" in prompt
     assert "CASI_SIMILI" in prompt
-    assert "Case 1" in prompt
-    assert "Snippet 1" in prompt
 
 
 @patch("app.services.llm.load_style_samples")
@@ -81,7 +78,6 @@ def test_build_prompt_no_optional_data_no_vision(
         corpus="Corpus basic",
         images=[],  # No images
         notes="",  # No notes
-        similar_cases=None,  # No similar cases
     )
     assert "Excerpt only" in prompt
     assert "Corpus basic" in prompt
@@ -103,7 +99,6 @@ def test_build_prompt_images_but_vision_disabled(
         corpus="Corpus",
         images=["image1_base64"],  # Images present
         notes="Notes",
-        similar_cases=None,
     )
     assert "FOTO_DANNI_BASE64:" not in prompt  # Vision disabled
 
@@ -118,7 +113,6 @@ def test_build_prompt_empty_inputs_handled_gracefully(
         corpus="",
         images=[],
         notes="",
-        similar_cases=[],  # Empty list for similar cases
     )
     # Assert that the prompt is still generated and key structures are present
     # This depends heavily on how build_prompt.jinja2 is structured for empty inputs
@@ -138,18 +132,14 @@ def test_generate_outline_prompt_all_data():
     rendered_prompt = template.render(
         template_excerpt="Outline template excerpt",
         corpus="Outline corpus",
-        similar_cases_str="Similar cases string for outline",
         notes="Outline notes",
         images_str="img1, img2",
     )
     assert "Outline template excerpt" in rendered_prompt
     assert "Outline corpus" in rendered_prompt
-    assert "Similar cases string for outline" in rendered_prompt
     assert "Outline notes" in rendered_prompt
     assert "img1, img2" in rendered_prompt
-    assert (
-        "## CASI_SIMILI:" in rendered_prompt
-    )  # Check presence of conditional block header
+    assert "## CASI_SIMILI:" in rendered_prompt
 
 
 def test_generate_outline_prompt_no_optional_data():
@@ -157,25 +147,13 @@ def test_generate_outline_prompt_no_optional_data():
     rendered_prompt = template.render(
         template_excerpt="Outline template excerpt basic",
         corpus="Outline corpus basic",
-        similar_cases_str="",  # Empty
         notes="Outline notes basic",
         images_str="",  # Empty
     )
     assert "Outline template excerpt basic" in rendered_prompt
     assert "Outline corpus basic" in rendered_prompt
     assert "Outline notes basic" in rendered_prompt
-    # Check that the block for similar_cases is omitted or handled if the string is empty
-    # Depending on the template: "{% if similar_cases_str %}{{ similar_cases_str }}{% else %}{% endif %}"
-    # An empty string would render an empty spot. If the section header is outside the if, it will be present.
-    # The template has "## CASI_SIMILI:
-    # <<<
-    # {% if similar_cases_str %}{{ similar_cases_str }}{% else %}{% endif %}
-    # >>>"
-    # So the header will be present, but content empty.
     assert "## CASI_SIMILI:" in rendered_prompt
-    # To assert no content for similar cases:
-    # A bit tricky with Jinja2, might need regex or more complex parsing if we want to be very specific
-    # For now, checking header presence is a good start.
 
 
 # B. expand_section_prompt.jinja2
@@ -188,7 +166,6 @@ def test_expand_section_prompt_all_data():
         section_question="What is this section about?",
         corpus="Expansion corpus",
         template_excerpt="Expansion template excerpt",
-        similar_cases_str="Similar cases for expansion",
         notes="Expansion notes",
         current_extra_styles="Expansion style sample",
     )
@@ -198,7 +175,6 @@ def test_expand_section_prompt_all_data():
     assert "What is this section about?" in rendered_prompt
     assert "Expansion corpus" in rendered_prompt
     assert "Expansion template excerpt" in rendered_prompt
-    assert "Similar cases for expansion" in rendered_prompt
     assert "Expansion notes" in rendered_prompt
     assert "Expansion style sample" in rendered_prompt
     assert "## CASI_SIMILI" in rendered_prompt
@@ -214,16 +190,14 @@ def test_expand_section_prompt_no_optional_data():
         section_question="Basic question?",
         corpus="Expansion corpus basic",
         template_excerpt="Expansion template excerpt basic",
-        similar_cases_str="",  # Empty
         notes="Expansion notes basic",
         current_extra_styles="",  # Empty
     )
     assert "Test Section Title Basic" in rendered_prompt
     assert "test_section_key_basic" in rendered_prompt
     assert "Expansion corpus basic" in rendered_prompt
-    # Check conditional blocks are handled (header might still be present)
-    assert "## CASI_SIMILI" in rendered_prompt  # Header present, content empty
-    assert "## ESEMPIO DI STILE" in rendered_prompt  # Header present, content empty
+    assert "## CASI_SIMILI" in rendered_prompt
+    assert "## ESEMPIO DI STILE" in rendered_prompt
 
 
 # C. harmonize_prompt.jinja2

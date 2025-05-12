@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List
 
 from docx import Document
-from fastapi import HTTPException
+from docx.opc.exceptions import PackageNotFoundError
 
 from app.core.config import settings
 from app.services.llm import (
@@ -12,7 +12,7 @@ from app.services.llm import (
     call_llm,
     extract_json,
 )
-from app.services.pipeline import PipelineError
+from app.services.pipeline import ConfigurationError, PipelineError
 
 __all__ = [
     "_load_template_excerpt",
@@ -32,14 +32,21 @@ async def _load_template_excerpt(template_path: str, request_id: str) -> str:
             "[%s] Loaded template excerpt: %d chars", request_id, len(template_excerpt)
         )
         return template_excerpt
+    except PackageNotFoundError as e:
+        logger.error(
+            "[%s] Template file not found or corrupted: %s", request_id, template_path
+        )
+        raise ConfigurationError(
+            f"Template file not found or invalid: {template_path}"
+        ) from e
     except Exception as e:
         logger.error(
             "[%s] Failed to load template for excerpt: %s",
             request_id,
             str(e),
-            exc_info=True,
+            exc_info=False,
         )
-        raise HTTPException(status_code=500, detail="Error loading template excerpt.")
+        raise ConfigurationError("Unexpected error loading template excerpt.") from e
 
 
 async def _extract_base_context(
@@ -57,9 +64,7 @@ async def _extract_base_context(
             logger.warning(
                 "[%s] Prompt too large: %d chars", request_id, len(base_prompt)
             )
-            raise HTTPException(
-                status_code=413, detail="Prompt too large or too many attachments"
-            )
+            raise PipelineError("Prompt too large or too many attachments")
 
         raw_base = await call_llm(base_prompt)
         base_ctx = extract_json(raw_base)
@@ -70,28 +75,22 @@ async def _extract_base_context(
             "[%s] LLM call for base context failed: %s",
             request_id,
             str(e),
-            exc_info=True,
+            exc_info=False,
         )
-        raise HTTPException(
-            status_code=500, detail=f"LLM processing for base fields failed: {str(e)}"
-        )
+        raise
     except JSONParsingError as e:
         logger.error(
             "[%s] JSON parsing for base context failed: %s",
             request_id,
             str(e),
-            exc_info=True,
+            exc_info=False,
         )
-        raise HTTPException(
-            status_code=500, detail=f"JSON parsing for base fields failed: {str(e)}"
-        )
+        raise
     except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
         logger.error(
-            "[%s] Unexpected error in base context extraction: %s",
+            "[%s] Unexpected error extracting base context: %s",
             request_id,
             str(e),
             exc_info=True,
         )
-        raise PipelineError(f"Unexpected error during base context extraction: {e}")
+        raise PipelineError("Unexpected error during base context extraction") from e

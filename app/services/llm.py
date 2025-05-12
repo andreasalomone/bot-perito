@@ -2,6 +2,7 @@ import json
 import logging
 import pathlib
 import re
+from typing import Any, Dict
 from uuid import uuid4
 
 import jinja2
@@ -24,6 +25,21 @@ class LLMError(Exception):
 
 class JSONParsingError(Exception):
     """Raised when JSON parsing fails"""
+
+
+# --- Reusable Jinja2 Environment ---
+# Initialize Jinja2 environment for prompt templates
+PROMPT_DIR = (
+    pathlib.Path(__file__).parent.parent / "services/prompt_templates"
+)  # Adjusted path
+try:
+    loader = jinja2.FileSystemLoader(PROMPT_DIR)
+    env = jinja2.Environment(loader=loader)
+    logger.info("Jinja2 environment initialized successfully for path: %s", PROMPT_DIR)
+except Exception:
+    logger.exception("Failed to initialize Jinja2 environment at %s", PROMPT_DIR)
+    # Depending on application needs, might re-raise or handle differently
+    env = None  # Ensure env is defined, even if initialization fails
 
 
 # ---------------------------------------------------------------
@@ -120,13 +136,85 @@ def extract_json(text: str) -> dict:
 
 
 # ---------------------------------------------------------------
-# Prompt builder (unchanged)
+# Helper for executing LLM step with template rendering
+# ---------------------------------------------------------------
+async def execute_llm_step_with_template(
+    request_id: str,
+    step_name: str,
+    template_name: str,
+    context: Dict[str, Any],
+    expected_type: type = dict,  # Expect a dict by default
+) -> Any:
+    """
+    Executes a single LLM step: load template, render, call LLM, parse JSON.
+    Handles common LLM and JSON parsing errors, raising appropriate exceptions.
+    """
+    logger.debug("[%s] Executing LLM step: %s", request_id, step_name)
+    if env is None:
+        logger.error(
+            "[%s] Jinja2 environment not initialized for step %s", request_id, step_name
+        )
+        raise LLMError(
+            "Internal configuration error: Template environment not available."
+        )
+
+    try:
+        template = env.get_template(template_name)
+        prompt = template.render(**context)
+        raw_response = await call_llm(prompt)
+        data = extract_json(raw_response)
+
+        # Optional: Validate the root type of the parsed JSON
+        if not isinstance(data, expected_type):
+            logger.error(
+                "[%s] Invalid data type returned for step '%s'. Expected %s, got %s. Data: %s",
+                request_id,
+                step_name,
+                expected_type.__name__,
+                type(data).__name__,
+                str(data)[:200],  # Log snippet of data
+            )
+            raise LLMError(f"Invalid data format received during '{step_name}' step.")
+
+        logger.debug("[%s] Successfully executed LLM step: %s", request_id, step_name)
+        return data
+
+    except (LLMError, JSONParsingError) as e:
+        # Errors from call_llm or extract_json or the type check above
+        logger.error(
+            "[%s] Failed LLM step '%s': %s",
+            request_id,
+            step_name,
+            str(e),
+            # exc_info=True is included in call_llm/extract_json if needed
+        )
+        # Re-raise directly as they are already specific
+        raise e
+    except jinja2.TemplateNotFound:
+        logger.error(
+            "[%s] Template not found: %s for step %s",
+            request_id,
+            template_name,
+            step_name,
+        )
+        raise LLMError(
+            f"Internal configuration error: Template '{template_name}' not found."
+        )
+    except Exception as e:
+        logger.exception(
+            "[%s] Unexpected error in LLM step '%s'", request_id, step_name
+        )
+        raise LLMError(f"Unexpected error during '{step_name}' step.") from e
+
+
+# ---------------------------------------------------------------
+# Prompt builder (unchanged) - NOTE: This might also be refactored later
 # ---------------------------------------------------------------
 
 # Initialize Jinja2 environment
-PROMPT_DIR = pathlib.Path(__file__).parent / "prompt_templates"
-loader = jinja2.FileSystemLoader(PROMPT_DIR)
-env = jinja2.Environment(loader=loader)
+# PROMPT_DIR = pathlib.Path(__file__).parent / "prompt_templates" # Defined above
+# loader = jinja2.FileSystemLoader(PROMPT_DIR) # Defined above
+# env = jinja2.Environment(loader=loader) # Defined above
 
 
 def build_prompt(
@@ -134,48 +222,49 @@ def build_prompt(
     corpus: str,
     images: list[str],
     notes: str,
-    similar_cases: list[dict] | None = None,
 ) -> str:
     """
     Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
     Il testo finale verrà inserito da docxtpl, quindi qui non serve
     formattazione.
     """
+    if env is None:
+        logger.error("Jinja2 environment not initialized for build_prompt")
+        # Handle error appropriately - maybe return a default prompt or raise
+        raise LLMError(
+            "Internal configuration error: Template environment not available."
+        )
 
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------
     extra_styles_content = load_style_samples()
     extra_styles = ""
     if extra_styles_content:
         extra_styles = (
-            "\n\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\n<<<\n"
-            f"{extra_styles_content}\n>>>"
+            "\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n"
+            f"{extra_styles_content}\\n>>>"
         )
 
     # --- eventuali immagini -------------------------------------------------
     img_block = ""
     if images and settings.allow_vision:
-        img_block = "\n\nFOTO_DANNI_BASE64:\n" + "\n".join(images)
-
-    # --- blocco casi simili ------------------------------------------------
-    cases_block = ""
-    if similar_cases:
-        joined = "\n\n---\n\n".join(
-            f"[{c['title']}]  \n{c['content_snippet']}" for c in similar_cases
-        )
-        cases_block = (
-            "\n\nCASI_SIMILI (usa solo come riferimento stilistico e per informazioni quali indirizzi, cause):\n<<<\n"
-            f"{joined}\n>>>"
-        )
+        img_block = "\\n\\nFOTO_DANNI_BASE64:\\n" + "\\n".join(images)
 
     # --- carica e renderizza template Jinja2 ----------------------------------
-    template = env.get_template("build_prompt.jinja2")
-    prompt_content = template.render(
-        template_excerpt=template_excerpt,
-        extra_styles=extra_styles,
-        corpus=corpus,
-        notes=notes,
-        img_block=img_block,
-        cases_block=cases_block,
-    )
-
-    return prompt_content
+    try:
+        template = env.get_template("build_prompt.jinja2")
+        prompt_content = template.render(
+            template_excerpt=template_excerpt,
+            extra_styles=extra_styles,
+            corpus=corpus,
+            notes=notes,
+            img_block=img_block,
+        )
+        return prompt_content
+    except jinja2.TemplateNotFound:
+        logger.error("Template not found: build_prompt.jinja2")
+        raise LLMError(
+            "Internal configuration error: Template 'build_prompt.jinja2' not found."
+        )
+    except Exception as e:
+        logger.exception("Unexpected error building prompt")
+        raise LLMError("Unexpected error building prompt.") from e
