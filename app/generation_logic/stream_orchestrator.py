@@ -9,17 +9,14 @@ from app.core.config import settings
 from app.generation_logic.context_preparation import (
     _extract_base_context,
     _load_template_excerpt,
-    _retrieve_similar_cases,
 )
 from app.generation_logic.file_processing import _validate_and_extract_files
 from app.services.clarification_service import ClarificationService
 from app.services.doc_builder import (  # For completeness in error handling
     DocBuilderError,
 )
-from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError, LLMError
 from app.services.pipeline import PipelineError, PipelineService
-from app.services.rag import RAGError
 
 __all__ = [
     "_create_stream_event",
@@ -61,24 +58,19 @@ def _create_stream_event(
 
 async def _stream_report_generation_logic(
     files: List[UploadFile],
-    damage_imgs: Optional[List[UploadFile]],
     notes: str,
-    use_rag: bool,
 ):
     """Orchestrate the end-to-end report generation, yielding NDJSON events that
     clients can consume as a stream.
     """
     request_id = str(uuid4())
     logger.info(
-        "[%s] Initiating streaming report generation: %d files, %d damage images, use_rag=%s",
+        "[%s] Initiating streaming report generation: %d files",
         request_id,
         len(files),
-        len(damage_imgs or []),
-        use_rag,
     )
 
     original_notes = notes
-    original_use_rag = use_rag
     section_map_from_pipeline: Optional[Dict[str, Any]] = None
 
     try:
@@ -90,9 +82,7 @@ async def _stream_report_generation_logic(
         yield _create_stream_event(
             "status", message="Validating inputs and extracting content…"
         )
-        corpus, img_tokens = await _validate_and_extract_files(
-            files, damage_imgs, request_id
-        )
+        corpus, img_tokens = await _validate_and_extract_files(files, request_id)
         yield _create_stream_event(
             "status",
             message=f"Content extracted: {len(corpus)} chars, {len(img_tokens)} images.",
@@ -106,29 +96,18 @@ async def _stream_report_generation_logic(
         yield _create_stream_event("status", message="Template excerpt loaded.")
 
         # ------------------------------------------------------------------
-        # 3. Retrieve similar cases (optional RAG)
-        # ------------------------------------------------------------------
-        yield _create_stream_event(
-            "status", message="Retrieving similar cases (if enabled)…"
-        )
-        similar_cases = await _retrieve_similar_cases(corpus, use_rag, request_id)
-        yield _create_stream_event(
-            "status", message=f"{len(similar_cases)} similar cases retrieved."
-        )
-
-        # ------------------------------------------------------------------
-        # 4. Base context via LLM
+        # 3. Base context via LLM
         # ------------------------------------------------------------------
         yield _create_stream_event(
             "status", message="Extracting base document context (LLM)…"
         )
         base_ctx = await _extract_base_context(
-            template_excerpt, corpus, img_tokens, notes, similar_cases, request_id
+            template_excerpt, corpus, img_tokens, notes, request_id
         )
         yield _create_stream_event("status", message="Base document context extracted.")
 
         # ------------------------------------------------------------------
-        # 5. Clarification step
+        # 4. Clarification step
         # ------------------------------------------------------------------
         clarification_service = ClarificationService()
         missing_info_list = clarification_service.identify_missing_fields(
@@ -145,8 +124,6 @@ async def _stream_report_generation_logic(
                 "original_corpus": corpus,
                 "image_tokens": img_tokens,
                 "notes": original_notes,
-                "use_rag": original_use_rag,
-                "similar_cases_retrieved": similar_cases,
                 "initial_llm_base_fields": base_ctx,
             }
             yield _create_stream_event(
@@ -162,7 +139,7 @@ async def _stream_report_generation_logic(
         )
 
         # ------------------------------------------------------------------
-        # 6. Streaming pipeline
+        # 5. Streaming pipeline
         # ------------------------------------------------------------------
         pipeline = PipelineService()
         async for pipeline_update_json_str in pipeline.run(
@@ -170,7 +147,6 @@ async def _stream_report_generation_logic(
             corpus,
             img_tokens,
             notes,
-            similar_cases,
             extra_styles="",
         ):
             try:
@@ -209,7 +185,7 @@ async def _stream_report_generation_logic(
                 )
 
         # ------------------------------------------------------------------
-        # 7. Final merge
+        # 6. Final merge
         # ------------------------------------------------------------------
         if section_map_from_pipeline is None:
             logger.error(
@@ -250,8 +226,6 @@ async def _stream_report_generation_logic(
         DocBuilderError,
         LLMError,
         JSONParsingError,
-        RAGError,
-        ExtractorError,
     ) as known_exc:
         logger.error(
             "[%s] Known error during stream: %s",

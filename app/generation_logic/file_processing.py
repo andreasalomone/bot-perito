@@ -6,18 +6,11 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
 from app.core.validation import validate_upload
-from app.services.extractor import (
-    ExtractorError,
-    extract,
-    extract_damage_image,
-    guard_corpus,
-)
+from app.services.extractor import ExtractorError, extract, guard_corpus
 
 __all__ = [
     "_extract_single_file",
     "extract_texts",
-    "_process_single_image",
-    "process_images",
     "_validate_and_extract_files",
 ]
 
@@ -130,95 +123,6 @@ async def extract_texts(
     return texts, imgs
 
 
-async def _process_single_image(damage_img: UploadFile, request_id: str) -> str:
-    """Process a single *dedicated* damage image, returning its token."""
-    try:
-        if not hasattr(damage_img, "file") or not hasattr(damage_img.file, "read"):
-            logger.error(
-                "[%s] Invalid UploadFile object for damage image: %s",
-                request_id,
-                damage_img.filename,
-            )
-            raise HTTPException(
-                status_code=400, detail="Invalid damage image file object received."
-            )
-
-        # Reset pointer
-        if hasattr(damage_img, "seek") and asyncio.iscoroutinefunction(damage_img.seek):
-            await damage_img.seek(0)
-        elif hasattr(damage_img.file, "seek"):
-            damage_img.file.seek(0)
-        else:
-            logger.warning(
-                "[%s] Damage image object for %s does not support seek(0). Proceeding…",
-                request_id,
-                damage_img.filename,
-            )
-
-        _discarded_text, tok = extract_damage_image(damage_img.file)
-        if tok is None:
-            logger.error(
-                "[%s] Damage image token extraction returned None for %s",
-                request_id,
-                damage_img.filename,
-            )
-            raise ExtractorError(
-                f"Token extraction failed for damage image {damage_img.filename}"
-            )
-
-        logger.debug(
-            "[%s] Extracted damage image from %s", request_id, damage_img.filename
-        )
-        return tok
-    except ExtractorError as e:
-        logger.error(
-            "[%s] Extraction error for damage image %s: %s",
-            request_id,
-            damage_img.filename,
-            str(e),
-            exc_info=True,
-        )
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(
-            "[%s] Failed to extract damage image from %s: %s",
-            request_id,
-            damage_img.filename,
-            str(e),
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred during image processing.",
-        )
-
-
-async def process_images(damage_imgs: List[UploadFile], request_id: str) -> List[str]:
-    """Process a list of dedicated damage images in parallel, returning their tokens."""
-    if not damage_imgs:
-        return []
-
-    tasks = [_process_single_image(img, request_id) for img in damage_imgs]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    img_tokens: List[str] = []
-    for result in results:
-        if isinstance(result, Exception):
-            if isinstance(result, HTTPException):
-                raise result
-            logger.error(
-                "[%s] Unexpected error during image processing part: %s",
-                request_id,
-                str(result),
-                exc_info=True,
-            )
-            raise result
-
-        img_tokens.append(result)  # type: ignore[arg-type]
-
-    return img_tokens
-
-
 # ---------------------------------------------------------------------------
 # High-level helper – validate, extract, prioritise images
 # ---------------------------------------------------------------------------
@@ -226,58 +130,24 @@ async def process_images(damage_imgs: List[UploadFile], request_id: str) -> List
 
 async def _validate_and_extract_files(
     files: List[UploadFile],
-    damage_imgs: Optional[List[UploadFile]],
     request_id: str,
 ) -> Tuple[str, List[str]]:
-    """Validate uploads and extract the main textual *corpus* and image tokens.
-
-    The logic prioritises image tokens found in the regular *files* over those
-    coming from *damage_imgs*, enforcing the ``settings.max_images_in_report``
-    limit.
-    """
+    """Validate uploads and extract the main textual *corpus* and image tokens."""
     max_images_in_report = getattr(settings, "max_images_in_report", 10)
 
     # Validate inputs -------------------------------------------------------
     for f_obj in files:
         await validate_upload(f_obj, request_id)
-    if damage_imgs:
-        for img_file in damage_imgs:
-            await validate_upload(img_file, request_id)
 
     # Extract content -------------------------------------------------------
     texts_content, general_img_tokens = await extract_texts(files, request_id)
 
-    damage_img_tokens: List[str] = []
-    if damage_imgs:
-        damage_img_tokens = await process_images(damage_imgs, request_id)
-
-    # Prioritise images from the main documents ----------------------------
-    final_img_tokens: List[str] = list(general_img_tokens)
-    remaining_slots = max_images_in_report - len(final_img_tokens)
-    if remaining_slots > 0 and damage_img_tokens:
-        final_img_tokens.extend(damage_img_tokens[:remaining_slots])
-
-    if len(final_img_tokens) > max_images_in_report:
-        # Truncation warnings ------------------------------------------------
-        if len(general_img_tokens) > max_images_in_report:
-            logger.warning(
-                "[%s] Too many general images (%d) from 'documenti perizia', truncating to %d.",
-                request_id,
-                len(general_img_tokens),
-                max_images_in_report,
-            )
-        else:
-            logger.warning(
-                "[%s] Total images exceed limit (%d); truncating to %d including dedicated 'immagini danni'.",
-                request_id,
-                len(final_img_tokens),
-                max_images_in_report,
-            )
-        final_img_tokens = final_img_tokens[:max_images_in_report]
+    # Truncate images if needed
+    final_img_tokens: List[str] = list(general_img_tokens)[:max_images_in_report]
 
     corpus = guard_corpus("\n\n".join(texts_content))
     logger.info(
-        "[%s] Final image tokens for prompt: %d (prioritised general doc images). Corpus length: %d.",
+        "[%s] Final image tokens for prompt: %d (from general doc images). Corpus length: %d.",
         request_id,
         len(final_img_tokens),
         len(corpus),

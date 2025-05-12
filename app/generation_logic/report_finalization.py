@@ -29,7 +29,6 @@ async def _run_processing_pipeline(
     corpus: str,
     imgs: list[str],
     notes: str,
-    similar_cases: list[Dict[str, Any]],
     request_id: str,
 ) -> Dict[str, Any]:
     """Execute the main content-generation pipeline synchronously, returning the
@@ -44,7 +43,6 @@ async def _run_processing_pipeline(
             corpus,
             imgs,
             notes,
-            similar_cases,
             extra_styles="",
         ):
             try:

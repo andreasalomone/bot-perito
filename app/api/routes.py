@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -30,12 +30,10 @@ router = APIRouter()
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
 async def generate(
     files: List[UploadFile] = File(...),
-    damage_imgs: Optional[List[UploadFile]] = File(None),  # Made Optional
     notes: str = Form(""),
-    use_rag: bool = Form(False),
 ):
     return StreamingResponse(
-        _stream_report_generation_logic(files, damage_imgs, notes, use_rag),
+        _stream_report_generation_logic(files, notes),
         media_type="application/x-ndjson",
     )
 

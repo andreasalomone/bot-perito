@@ -18,13 +18,7 @@ class Settings(BaseSettings):
     )
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
     max_images_in_report: int = Field(10, env="MAX_IMAGES_IN_REPORT")
-    rag_default_k: int = Field(3, env="RAG_DEFAULT_K")
 
-    supabase_url: str | None = Field(None, env="SUPABASE_URL")
-    supabase_anon_key: str | None = Field(None, env="SUPABASE_ANON_KEY")
-    supabase_service_role_key: str | None = Field(None, env="SUPABASE_SERVICE_ROLE_KEY")
-    ref_dir: Path = Field(Path("data/reference_reports"), env="REF_DIR")
-    emb_model_name: str = Field("all-MiniLM-L6-v2", env="EMB_MODEL_NAME")
     api_key: str | None = Field(None, env="API_KEY")
 
     CRITICAL_FIELDS_FOR_CLARIFICATION: dict[str, dict[str, str]] = Field(

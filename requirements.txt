@@ -28,8 +28,3 @@ aiofiles==24.1.0
 pdfplumber==0.11.6        # pulls pdfminer.six, pypdf
 pillow==11.2.1
 pytesseract==0.3.13
-
-# RAG
-async-lru>=2.0.5
-supabase==2.4.2
-tqdm==4.67.1

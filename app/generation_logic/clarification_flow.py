@@ -14,10 +14,8 @@ from app.generation_logic.report_finalization import (
 )
 from app.models.report_models import ClarificationPayload
 from app.services.doc_builder import DocBuilderError
-from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError, LLMError
 from app.services.pipeline import PipelineError
-from app.services.rag import RAGError
 
 __all__ = ["build_report_with_clarifications"]
 
@@ -65,7 +63,6 @@ async def build_report_with_clarifications(
             corpus=artifacts.original_corpus,
             imgs=artifacts.image_tokens,
             notes=artifacts.notes,
-            similar_cases=artifacts.similar_cases_retrieved,
             request_id=request_id,
         )
 
@@ -95,8 +92,6 @@ async def build_report_with_clarifications(
         DocBuilderError,
         LLMError,
         JSONParsingError,
-        RAGError,
-        ExtractorError,
     ) as domain_exc:
         logger.error(
             "[%s] Domain error while building report with clarifications: %s",

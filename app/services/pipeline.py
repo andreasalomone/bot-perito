@@ -35,42 +35,22 @@ class PipelineService:
         self,
         template_excerpt: str,
         corpus: str,
-        similar_cases: List[Dict[str, Any]],
         notes: str,
-        images: List[str],
     ) -> List[Dict[str, Any]]:
         """
         Step 1: genera un outline JSON con titoli e bullet points per ciascuna sezione.
         Restituisce lista di titoli di sezione.
         """
         request_id = str(uuid4())
-        logger.info(
-            "[%s] Generating outline with %d similar cases and %d images",
-            request_id,
-            len(similar_cases),
-            len(images),
-        )
+        logger.info("[%s] Generating outline", request_id)
 
         try:
-            # Define the separator for similar cases to avoid backslash in f-string expression
-            similar_cases_separator = "\n\n---\n\n"
-            similar_cases_str = (
-                similar_cases_separator.join(
-                    c["content_snippet"] for c in similar_cases
-                )
-                if similar_cases
-                else ""
-            )
-            images_str = "; ".join(f"IMG{i + 1}" for i in range(len(images)))
-
             # Load and render prompt template
             template = env.get_template("generate_outline_prompt.jinja2")
             prompt = template.render(
                 template_excerpt=template_excerpt,
                 corpus=corpus,
-                similar_cases_str=similar_cases_str,
                 notes=notes,
-                images_str=images_str,
             )
             raw = await call_llm(prompt)
             data = extract_json(raw)
@@ -106,7 +86,7 @@ class PipelineService:
     ) -> str:
         """
         Step 2: per ciascuna sezione, espandi con almeno 200 parole.
-        context include template_excerpt, corpus, notes, images, similar_cases, e outline completo.
+        context include template_excerpt, corpus, notes, e outline completo.
         """
         request_id = str(uuid4())
         sec_key = section["section"]
@@ -122,10 +102,6 @@ class PipelineService:
 
         try:
             current_extra_styles = context.get("extra_styles", "")
-            # Define the separator for similar cases to avoid backslash in f-string expression
-            similar_cases_separator = "\n\n---\n\n"
-            similar_cases_str = similar_cases_separator.join(context.get("similar", []))
-
             section_questions = {
                 "dinamica_eventi": "Chi, cosa, quando, dove e perché è avvenuto il sinistro?",
                 "accertamenti": "Quali prove fotografiche e rilievi del danno sono stati eseguiti? Chi, dove e quando?",
@@ -143,7 +119,6 @@ class PipelineService:
                 section_question=section_question,
                 corpus=context["corpus"],
                 template_excerpt=context["template_excerpt"],
-                similar_cases_str=similar_cases_str,
                 notes=context["notes"],
                 current_extra_styles=current_extra_styles,
             )
@@ -249,7 +224,6 @@ class PipelineService:
         corpus: str,
         imgs: List[str],
         notes: str,
-        similar: List[Dict[str, Any]],
         extra_styles: str,
     ) -> AsyncGenerator[str, None]:
         request_id = str(uuid4())
@@ -265,9 +239,7 @@ class PipelineService:
                 {"type": "status", "message": "Generating report outline..."}
             )
             # 1. Outline
-            outline = await self.generate_outline(
-                template_excerpt, corpus, similar, notes, imgs
-            )
+            outline = await self.generate_outline(template_excerpt, corpus, notes)
             yield json.dumps(
                 {
                     "type": "status",
@@ -279,7 +251,6 @@ class PipelineService:
             context = {
                 "corpus": corpus,
                 "template_excerpt": template_excerpt,
-                "similar": [case["content_snippet"] for case in similar],
                 "notes": notes,
                 "extra_styles": extra_styles,
             }

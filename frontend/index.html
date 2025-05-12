@@ -35,28 +35,10 @@
           aria-label="Carica i tuoi documenti">
       </div>
 
-      <!-- NEW – foto peritali -->
-      <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
-        Carica le foto peritali dei danni (massimo 10, ciascuna max 10MB)
-      </label>
-      <div class="file-input-wrapper">
-        <input
-          type="file"
-          name="damage_imgs"
-          multiple
-          accept="image/*"
-          class="file-input"
-          aria-label="Foto dei danni">
-      </div>
-
       <div class="textarea-wrapper">
         <textarea name="notes" rows="4" placeholder="Inserisci qui eventuali note o dettagli aggiuntivi..."
           aria-label="Note aggiuntive"></textarea>
       </div>
-      <label style="display:block; margin:1rem 0;">
-        <input type="checkbox" id="use_rag" name="use_rag">
-        Includi casi simili (Non usare ancora)
-      </label>
       <button type="submit">
         <span>Genera Report</span>
       </button>

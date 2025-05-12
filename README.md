@@ -9,7 +9,6 @@ Report-AI enables you to upload documents (PDF, DOCX, images) and generate a com
 ## Features
 
 - Extract text from PDF, DOCX, and images (OCR)
-- Optional Retrieval-Augmented Generation (RAG) of similar cases via Supabase
 - Multi-step LLM pipeline: outline → expand sections → harmonize
 - Inject generated content into a DOCX template
 - FastAPI backend with robust error handling and logging
@@ -23,7 +22,6 @@ Report-AI enables you to upload documents (PDF, DOCX, images) and generate a com
 - **Backend**: Python 3.11, FastAPI, Starlette
 - **Document Processing**: `pdfplumber`, `python-docx`, `docxtpl`, `pytesseract`, `Pillow`
 - **LLM & Embeddings**: OpenAI / Hugging Face, `tenacity`, `httpx`, `sentence-transformers`
-- **RAG**: Supabase for vector similarity search
 - **Frontend**: Vanilla HTML, CSS, JavaScript
 - **Deployment**: Vercel (Python & Static)
 - **Linting & Formatting**: Black, isort, flake8, mypy
@@ -72,22 +70,12 @@ Report-AI enables you to upload documents (PDF, DOCX, images) and generate a com
    OPENROUTER_API_KEY=<optional-openrouter-key>
    HF_API_TOKEN=<optional-huggingface-token>
    MODEL_ID=<llm-model-identifier>
-   SUPABASE_URL=<your-supabase-url>
-   SUPABASE_ANON_KEY=<supabase-anon-key>
-   SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-key>
    REFERENCE_DIR=app/templates/reference
    TEMPLATE_PATH=app/templates/template.docx
-   REF_DIR=data/reference_reports
-   EMB_MODEL_NAME=all-MiniLM-L6-v2
    ALLOW_VISION=true
    MAX_PROMPT_CHARS=4000000
    MAX_TOTAL_PROMPT_CHARS=4000000
    CLEANUP_TTL=900
-   ```
-
-5. **(Optional) Index reference reports for RAG**
-   ```bash
-   python scripts/index_reference_reports.py
    ```
 
 ---
@@ -142,7 +130,6 @@ vercel --prod
 - `files`: One or more document files (`.pdf`, `.docx`, `.doc`, images)
 - `damage_imgs`: (Optional) Up to 10 damage images
 - `notes`: (Optional) Additional notes for the report
-- `use_rag`: `true` or `false` (enable similar-case retrieval)
 
 **Response**:
 - `200 OK`: Returns a `.docx` file (`report.docx`)
@@ -155,7 +142,6 @@ curl -X POST http://localhost:8000/api/generate \
   -H "X-API-Key: $API_KEY" \
   -F "files=@injury_report.pdf" \
   -F "notes=Include weather conditions" \
-  -F "use_rag=false" \
   --output report.docx
 ```
 
@@ -200,7 +186,6 @@ def mock_api_key(monkeypatch):
 
 def test_generate_endpoint(monkeypatch):
     monkeypatch.setenv("API_KEY", "testkey")
-    monkeypatch.setattr("app.services.rag.RAGService.retrieve", lambda *_: [])
     monkeypatch.setattr("app.services.llm.call_llm", lambda *_: '{"client":"","client_address1":"","client_address2":"","date":"","vs_rif":"","rif_broker":"","polizza":"","ns_rif":"","assicurato":"","indirizzo_ass1":"","indirizzo_ass2":"","luogo":"","data_danno":"","cause":"","data_incarico":"","merce":"","peso_merce":"","valore_merce":"","data_intervento":"","dinamica_eventi":"","accertamenti":"","quantificazione":"","commento":"","allegati":""}')
     monkeypatch.setattr("app.services.pipeline.PipelineService.run", lambda *a, **k: {"dinamica_eventi":"","accertamenti":"","quantificazione":"","commento":""})
     monkeypatch.setattr("app.services.doc_builder.inject", lambda *a, **k: b"DOCXBYTES")
@@ -223,12 +208,11 @@ report-ai/
 ├── app/                    # FastAPI backend
 │   ├── api/                # REST endpoints
 │   ├── core/               # Configuration, logging, cleanup
-│   ├── services/           # Extraction, LLM pipeline, RAG, doc builder
+│   ├── services/           # Extraction, LLM pipeline, doc builder
 │   └── templates/          # DOCX template & reference files
 ├── api/                    # Scheduled serverless functions (cleanup)
 ├── frontend/               # Static HTML/CSS/JS frontend
-├── scripts/                # Utility scripts (e.g., index_reference_reports)
-├── data/                   # Reference reports for RAG
+├── scripts/                # Utility scripts
 ├── requirements.txt        # Runtime dependencies
 ├── requirements-dev.txt    # Development dependencies
 ├── vercel.json             # Vercel deployment settings
@@ -264,5 +248,4 @@ This project does not include a license file. Consider adding an open-source lic
 - Powered by FastAPI
 - Document templating by `docxtpl` and `python-docx`
 - Embeddings via `sentence-transformers`
-- RAG with Supabase vector search
 - Deployed on Vercel

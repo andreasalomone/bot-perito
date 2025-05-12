@@ -38,10 +38,6 @@ class RequestArtifacts(BaseModel):
     original_corpus: str
     image_tokens: List[str]  # From the plan, this is what `imgs` corresponds to
     notes: str
-    use_rag: bool
-    similar_cases_retrieved: List[
-        dict
-    ]  # Assuming list of dicts as per RAGService output
     initial_llm_base_fields: (
         ReportContext  # This is the base_ctx from the first LLM call
     )

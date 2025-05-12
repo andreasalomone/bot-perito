@@ -10,7 +10,6 @@ from .clarification_flow import build_report_with_clarifications  # noqa: F401
 from .context_preparation import (  # noqa: F401
     _extract_base_context,
     _load_template_excerpt,
-    _retrieve_similar_cases,
 )
 
 # Re-export most commonly-used helpers for convenience
