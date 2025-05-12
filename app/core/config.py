@@ -17,6 +17,8 @@ class Settings(BaseSettings):
         Path("app/templates/template.docx"), env="TEMPLATE_PATH"
     )
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
+    max_images_in_report: int = Field(10, env="MAX_IMAGES_IN_REPORT")
+    rag_default_k: int = Field(3, env="RAG_DEFAULT_K")
 
     supabase_url: str | None = Field(None, env="SUPABASE_URL")
     supabase_anon_key: str | None = Field(None, env="SUPABASE_ANON_KEY")

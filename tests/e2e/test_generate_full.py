@@ -19,19 +19,23 @@ def test_generate_full_happy_path(monkeypatch):
     async def noop_validate_upload(file, request_id):
         return None
 
-    monkeypatch.setattr("app.api.routes.validate_upload", noop_validate_upload)
+    monkeypatch.setattr("app.core.validation.validate_upload", noop_validate_upload)
 
     async def fake_extract_texts(files, request_id):
         return ["text1"], ["img_token"]
 
-    monkeypatch.setattr("app.api.routes.extract_texts", fake_extract_texts)
+    monkeypatch.setattr(
+        "app.generation_logic.file_processing.extract_texts", fake_extract_texts
+    )
 
     async def fake_process_images(imgs, request_id):
         return []
 
-    monkeypatch.setattr("app.api.routes.process_images", fake_process_images)
+    monkeypatch.setattr(
+        "app.generation_logic.file_processing.process_images", fake_process_images
+    )
 
-    monkeypatch.setattr("app.api.routes.guard_corpus", lambda x: x)
+    monkeypatch.setattr("app.services.extractor.guard_corpus", lambda x: x)
 
     class FakeParagraph:
         def __init__(self, text="Ex"):
@@ -41,9 +45,13 @@ def test_generate_full_happy_path(monkeypatch):
         def __init__(self, path):
             self.paragraphs = [FakeParagraph(f"Paragraph {i}") for i in range(8)]
 
-    monkeypatch.setattr("app.api.routes.Document", FakeTemplate)
+    monkeypatch.setattr(
+        "app.generation_logic.context_preparation.Document", FakeTemplate
+    )
 
-    monkeypatch.setattr("app.api.routes.build_prompt", lambda *args, **kwargs: "prompt")
+    monkeypatch.setattr(
+        "app.services.llm.build_prompt", lambda *args, **kwargs: "prompt"
+    )
 
     base_json_dict = {
         "client": "C",
@@ -76,17 +84,17 @@ def test_generate_full_happy_path(monkeypatch):
     async def fake_call_llm(prompt):
         return base_json_str
 
-    monkeypatch.setattr("app.api.routes.call_llm", fake_call_llm)
+    monkeypatch.setattr("app.services.llm.call_llm", fake_call_llm)
 
     monkeypatch.setattr(
-        "app.api.routes.extract_json", lambda raw_json_string: base_json_dict
+        "app.services.llm.extract_json", lambda raw_json_string: base_json_dict
     )
 
     class FakeRAGService:
         async def retrieve(self, corpus, k):
             return []
 
-    monkeypatch.setattr("app.api.routes.RAGService", lambda: FakeRAGService())
+    monkeypatch.setattr("app.services.rag.RAGService", lambda: FakeRAGService())
 
     # Updated FakePipeline mock
     class FakePipeline:
@@ -100,7 +108,7 @@ def test_generate_full_happy_path(monkeypatch):
             yield json.dumps({"type": "status", "message": "Pipeline started"})
             yield json.dumps({"type": "data", "payload": pipeline_payload})
 
-    monkeypatch.setattr("app.api.routes.PipelineService", lambda: FakePipeline())
+    monkeypatch.setattr("app.services.pipeline.PipelineService", lambda: FakePipeline())
 
     # Remove mock for app.api.routes.inject as it's not used by /generate stream
     # monkeypatch.setattr("app.api.routes.inject", lambda tpl_path, payload: b"PK1234")

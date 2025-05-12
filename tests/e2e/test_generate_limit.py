@@ -14,14 +14,16 @@ def test_generate_prompt_size_limit(monkeypatch):
     async def noop_validate_upload(file, request_id):
         return None
 
-    monkeypatch.setattr("app.api.routes.validate_upload", noop_validate_upload)
+    monkeypatch.setattr("app.core.validation.validate_upload", noop_validate_upload)
 
     # Mock extract_texts to avoid issues with dummy PDF content
     async def mock_extract_texts(files, request_id):
         # Return minimal corpus and no images to ensure prompt is mainly from build_prompt
         return ("tiny", [])  # (texts, imgs)
 
-    monkeypatch.setattr("app.api.routes.extract_texts", mock_extract_texts)
+    monkeypatch.setattr(
+        "app.generation_logic.file_processing.extract_texts", mock_extract_texts
+    )
 
     # Configure prompt size threshold small and stub build_prompt to exceed it
     monkeypatch.setattr(settings, "max_total_prompt_chars", 10, raising=False)
@@ -41,14 +43,16 @@ def test_generate_prompt_size_limit(monkeypatch):
         return "short excerpt"
 
     monkeypatch.setattr(
-        "app.api.routes._load_template_excerpt", mock_load_template_excerpt
+        "app.generation_logic.context_preparation._load_template_excerpt",
+        mock_load_template_excerpt,
     )
 
     async def mock_retrieve_similar_cases(*args, **kwargs):
         return []
 
     monkeypatch.setattr(
-        "app.api.routes._retrieve_similar_cases", mock_retrieve_similar_cases
+        "app.generation_logic.context_preparation._retrieve_similar_cases",
+        mock_retrieve_similar_cases,
     )
 
     client = TestClient(app)

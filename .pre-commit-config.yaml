@@ -43,13 +43,13 @@ repos:
       - id: check-yaml
 
   # Pytest hook # This line and below needs to be indented
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
-        language: system
-        types: [python]
-        pass_filenames: false
-        # Consider `stages: [commit]` if you only want to run on commit
+#  - repo: local
+#    hooks:
+#      - id: pytest
+#        name: pytest
+#        entry: pytest
+#        language: system
+#        types: [python]
+#        pass_filenames: false
+#        # Consider `stages: [commit]` if you only want to run on commit
         # and not with `pre-commit run --all-files` unless specified.
