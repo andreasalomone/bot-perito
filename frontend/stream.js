@@ -6,7 +6,9 @@ import {
     showApiError,
     showStreamError,
     displayClarificationUI,
-    clarificationUIElement // Import for checking visibility
+    clarificationUIElement, // Import for checking visibility
+    isErrorActive,
+    isClarificationUIVisible
 } from './ui.js';
 import { finalizeAndDownloadReport } from './api.js';
 
@@ -20,14 +22,11 @@ const processStreamChunk = (line, clarificationSubmitHandler) => {
         updateStatus(data.message);
         break;
       case 'data':
-        console.log('Final Report Data:', data.payload);
-        // Don't hide spinner here, finalizeAndDownloadReport will handle UI
+        // Process data without logging full payload
         finalizeAndDownloadReport(data.payload);
         break;
       case 'clarification_needed':
         updateStatus('Chiarimenti necessari...'); // Update status before showing UI
-        console.log('Clarification Needed:', data.missing_fields);
-        console.log('Request Artifacts:', data.request_artifacts);
         displayClarificationUI(data.missing_fields, data.request_artifacts, clarificationSubmitHandler);
         break;
       case 'error':
@@ -89,15 +88,8 @@ export const processStreamResponse = async (response, clarificationSubmitHandler
 };
 
 const checkStreamFinishedState = () => {
-    // Check if an error message is already displayed or clarification needed
-    const clarificationIsVisible = clarificationUIElement &&
-      clarificationUIElement.style.display === 'block';
-    // Check status message content for error states
-    const statusText = document.getElementById('status-message')?.textContent || '';
-    const isErrorState = statusText.startsWith('Errore:') || statusText.startsWith('Fallimento:');
-
     // Only show this error if not already in a final error state or waiting for clarification
-    if (!clarificationIsVisible && !isErrorState) {
+    if (!isClarificationUIVisible && !isErrorActive) {
         showStreamError('La comunicazione con il server è stata interrotta inaspettatamente.');
     }
 };

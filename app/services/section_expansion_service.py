@@ -4,7 +4,9 @@ import logging
 
 from app.core.exceptions import PipelineError  # Import from core exceptions
 from app.models.report_models import OutlineItem  # Import OutlineItem
-from app.services.llm import JSONParsingError, LLMError, execute_llm_step_with_template
+from app.services.llm import JSONParsingError
+from app.services.llm import LLMError
+from app.services.llm import execute_llm_step_with_template
 
 # Define PipelineError or import from a central location
 # from app.services.pipeline import PipelineError  # Example import
@@ -27,9 +29,7 @@ class SectionExpansionService:
         notes: str,
         reference_style_text: str,
     ) -> str:
-        """
-        Expands a single section outline item into detailed content.
-        """
+        """Expands a single section outline item into detailed content."""
         sec_key = section.section  # Use attribute access
         title = section.title  # Use attribute access
         bullets = section.bullets  # Use attribute access
@@ -56,9 +56,7 @@ class SectionExpansionService:
             llm_context = {
                 "title": title,
                 "sec_key": sec_key,
-                "bullets": str(
-                    bullets
-                ),  # bullets is List[str], ensure it's passed as a string if template expects that
+                "bullets": str(bullets),  # bullets is List[str], ensure it's passed as a string if template expects that
                 "section_question": section_question,
                 "corpus": corpus,
                 "template_excerpt": template_excerpt,
@@ -79,9 +77,7 @@ class SectionExpansionService:
 
             # Keep specific validation for section content
             if not content:
-                logger.error(
-                    "[%s] Empty content returned for section '%s'", request_id, title
-                )
+                logger.error("[%s] Empty content returned for section '%s'", request_id, title)
                 raise PipelineError(f"Empty content for section {title}")
 
             logger.info(

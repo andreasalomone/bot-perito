@@ -50,3 +50,28 @@ scripts/**
 
 # Node modules should be re-installed during build, not uploaded
 frontend/node_modules/**
+
+# ───────────────────────────────
+#  Development & Configuration Files
+#  (Not needed for Vercel deployment)
+# ───────────────────────────────
+README.md
+.gitignore
+.vercelignore
+requirements-dev.txt
+.pre-commit-config.yaml
+pytest.ini
+mypy.ini
+pyproject.toml
+.flake8
+.coverage
+*.log
+
+# Environment files (use Vercel Environment Variables instead)
+.env
+.env.*
+# !.env.production # Example: if you ever needed to un-ignore a specific one (use Vercel Env Vars)
+
+# Editor/Tooling specific
+.cursorrules
+.cursor/

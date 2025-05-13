@@ -1,36 +1,18 @@
 repos:
-  - repo: https://github.com/pre-commit/mirrors-isort
-    rev: v5.10.1
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version. Optional: specify a revision like rev: 'v0.1.0'
+    rev: 'v0.11.9' # Use a recent stable version
     hooks:
-      - id: isort
-        name: isort (import sorting)
-        language_version: python3.11
-
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        language_version: python3.11
-
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.1.0
-    hooks:
-      - id: flake8
-        additional_dependencies: [flake8-bugbear]
-
-  - repo: https://github.com/PyCQA/autoflake
-    rev: v2.3.1 # Or check for the latest stable version
-    hooks:
-      - id: autoflake
-        args:
-          - --in-place
-          - --remove-all-unused-imports
-          - --expand-star-imports
-          - --remove-unused-variables
-        types: [python]
+      - id: ruff
+        name: ruff (lint)
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff (format)
+        types_or: [python, pyi]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.6.1
+    rev: v1.15.0
     hooks:
       - id: mypy
         additional_dependencies: []

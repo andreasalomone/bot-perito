@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict
 
 from app.core.exceptions import PipelineError  # Import from core exceptions
-from app.services.llm import JSONParsingError, LLMError, execute_llm_step_with_template
+from app.services.llm import JSONParsingError
+from app.services.llm import LLMError
+from app.services.llm import execute_llm_step_with_template
 
 # Define PipelineError or import from a central location
 # from app.services.pipeline import PipelineError  # Example import
@@ -16,12 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class HarmonizationService:
-    async def harmonize(
-        self, request_id: str, sections: Dict[str, str], reference_style_text: str
-    ) -> Dict[str, str]:
-        """
-        Harmonizes the style and tone across multiple report sections.
-        """
+    async def harmonize(self, request_id: str, sections: dict[str, str], reference_style_text: str) -> dict[str, str]:
+        """Harmonizes the style and tone across multiple report sections."""
         logger.info("[%s] Harmonizing %d sections", request_id, len(sections))
         original_keys = set(sections.keys())
 
@@ -50,9 +47,7 @@ class HarmonizationService:
             )
 
             # Keep specific validation for harmonization result
-            if not isinstance(harmonized_data, dict) or not original_keys.issubset(
-                harmonized_data.keys()
-            ):
+            if not isinstance(harmonized_data, dict) or not original_keys.issubset(harmonized_data.keys()):
                 missing_keys = original_keys - set(harmonized_data.keys())
                 logger.error(
                     "[%s] Incomplete harmonization result: Missing keys. Expected: %s, Got: %s, Missing: %s",
@@ -61,9 +56,7 @@ class HarmonizationService:
                     list(harmonized_data.keys()),
                     list(missing_keys),
                 )
-                raise PipelineError(
-                    f"Harmonization result missed expected sections: {missing_keys}"
-                )
+                raise PipelineError(f"Harmonization result missed expected sections: {missing_keys}")
 
             logger.info(
                 "[%s] Successfully harmonized sections. Keys: %s",
@@ -73,13 +66,9 @@ class HarmonizationService:
             return harmonized_data
 
         except (LLMError, JSONParsingError, PipelineError) as e:
-            logger.error(
-                "[%s] Harmonization failed: %s", request_id, str(e), exc_info=False
-            )
+            logger.error("[%s] Harmonization failed: %s", request_id, str(e), exc_info=False)
             raise PipelineError(f"Failed to harmonize sections: {str(e)}") from e
         except Exception as e:
             # Catch unexpected errors during this specific step's orchestration
-            logger.exception(
-                "[%s] Unexpected error in harmonization orchestration", request_id
-            )
+            logger.exception("[%s] Unexpected error in harmonization orchestration", request_id)
             raise PipelineError("Unexpected error during harmonization") from e

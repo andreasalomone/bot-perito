@@ -1,37 +1,33 @@
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel
 
 
 class ReportContext(BaseModel):
     """Represents the core data fields extracted or generated for a report."""
 
-    client: Optional[str] = None
-    client_address1: Optional[str] = None
-    client_address2: Optional[str] = None
-    date: Optional[str] = None
-    vs_rif: Optional[str] = None
-    rif_broker: Optional[str] = None
-    polizza: Optional[str] = None
-    ns_rif: Optional[str] = None
-    assicurato: Optional[str] = None
-    indirizzo_ass1: Optional[str] = None
-    indirizzo_ass2: Optional[str] = None
-    luogo: Optional[str] = None
-    data_danno: Optional[str] = None
-    cause: Optional[str] = None
-    data_incarico: Optional[str] = None
-    merce: Optional[str] = None
-    peso_merce: Optional[str] = None
-    valore_merce: Optional[str] = None
-    data_intervento: Optional[str] = None
-    dinamica_eventi: Optional[str] = None
-    accertamenti: Optional[str] = None
-    quantificazione: Optional[str] = None
-    commento: Optional[str] = None
-    allegati: Optional[List[str]] = (
-        None  # List of attachment filenames, e.g., ["file1.pdf", "image.png"]
-    )
+    client: str | None = None
+    client_address1: str | None = None
+    client_address2: str | None = None
+    date: str | None = None
+    vs_rif: str | None = None
+    rif_broker: str | None = None
+    polizza: str | None = None
+    ns_rif: str | None = None
+    assicurato: str | None = None
+    indirizzo_ass1: str | None = None
+    indirizzo_ass2: str | None = None
+    luogo: str | None = None
+    data_danno: str | None = None
+    cause: str | None = None
+    data_incarico: str | None = None
+    merce: str | None = None
+    peso_merce: str | None = None
+    valore_merce: str | None = None
+    data_intervento: str | None = None
+    dinamica_eventi: str | None = None
+    accertamenti: str | None = None
+    quantificazione: str | None = None
+    commento: str | None = None
+    allegati: list[str] | None = None  # List of attachment filenames, e.g., ["file1.pdf", "image.png"]
 
 
 class OutlineItem(BaseModel):
@@ -39,24 +35,22 @@ class OutlineItem(BaseModel):
 
     section: str
     title: str
-    bullets: List[str]
+    bullets: list[str]
 
 
 class RequestArtifacts(BaseModel):
     """Holds intermediate artifacts and context passed between report generation steps."""
 
     original_corpus: str
-    image_tokens: List[str]  # From the plan, this is what `imgs` corresponds to
+    image_tokens: list[str]  # From the plan, this is what `imgs` corresponds to
     notes: str
     template_excerpt: str
     reference_style_text: str
-    initial_llm_base_fields: (
-        ReportContext  # This is the base_ctx from the first LLM call
-    )
+    initial_llm_base_fields: ReportContext  # This is the base_ctx from the first LLM call
 
 
 class ClarificationPayload(BaseModel):
     """Defines the structure for receiving user clarifications."""
 
-    clarifications: Dict[str, Optional[str]]
+    clarifications: dict[str, str | None]
     request_artifacts: RequestArtifacts

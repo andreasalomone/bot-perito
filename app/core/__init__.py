@@ -1,3 +1,1 @@
-"""
-This module contains core application functionality.
-"""
+"""This module contains core application functionality."""

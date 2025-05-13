@@ -9,7 +9,8 @@ from app.api.routes import router
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.services.doc_builder import DocBuilderError
-from app.services.llm import JSONParsingError, LLMError
+from app.services.llm import JSONParsingError
+from app.services.llm import LLMError
 from app.services.pipeline import PipelineError
 
 setup_logging()

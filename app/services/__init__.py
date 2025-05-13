@@ -1,3 +1,1 @@
-"""
-This module contains service-related functionality.
-"""
+"""This module contains service-related functionality."""

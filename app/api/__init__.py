@@ -1,3 +1,1 @@
-"""
-This module contains API-related functionality.
-"""
+"""This module contains API-related functionality."""

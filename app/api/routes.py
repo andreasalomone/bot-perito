@@ -1,20 +1,25 @@
 import logging
 from functools import wraps
-from typing import List
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter
+from fastapi import File
+from fastapi import Form
+from fastapi import HTTPException
+from fastapi import UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.exceptions import PipelineError
-from app.core.security import Depends, verify_api_key
+from app.core.security import Depends
+from app.core.security import verify_api_key
 from app.generation_logic.clarification_flow import build_report_with_clarifications
 from app.generation_logic.report_finalization import _generate_and_stream_docx
 
 # Generation-logic helpers -------------------------------------------------
 from app.generation_logic.stream_orchestrator import _stream_report_generation_logic
-from app.models.report_models import ClarificationPayload, ReportContext
+from app.models.report_models import ClarificationPayload
+from app.models.report_models import ReportContext
 
 # Error classes re-used in endpoint-level exception handling --------------
 from app.services.doc_builder import DocBuilderError
@@ -36,9 +41,7 @@ def handle_docx_generation_errors(func):
         # For simplicity, we'll generate one if not obvious from args/kwargs.
         # A better approach might be to pass it explicitly or extract from a request object if available.
         request_id = str(uuid4())
-        kwargs["request_id"] = (
-            request_id  # Inject into kwargs for the decorated function
-        )
+        kwargs["request_id"] = request_id  # Inject into kwargs for the decorated function
 
         try:
             return await func(*args, **kwargs)
@@ -52,7 +55,7 @@ def handle_docx_generation_errors(func):
             raise HTTPException(
                 status_code=500,
                 detail=f"DOCX generation error: {str(e)}",
-            )
+            ) from e
         except PipelineError as e:
             # Refine status code based on error content
             status_code = 500
@@ -69,7 +72,7 @@ def handle_docx_generation_errors(func):
                 error_msg,
                 exc_info=False,  # Details should be logged where the error originated
             )
-            raise HTTPException(status_code=status_code, detail=error_msg)
+            raise HTTPException(status_code=status_code, detail=error_msg) from e
         except Exception as e:
             logger.error(
                 "[%s] Unexpected error during DOCX generation: %s",
@@ -80,10 +83,9 @@ def handle_docx_generation_errors(func):
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    "An unexpected server error occurred during report generation "
-                    f"(trace: {request_id})."  # Provide trace ID
+                    f"An unexpected server error occurred during report generation (trace: {request_id})."  # Provide trace ID
                 ),
-            )
+            ) from e
 
     return wrapper
 
@@ -95,13 +97,12 @@ def handle_docx_generation_errors(func):
 
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
 async def generate(
-    files: List[UploadFile] = File(
+    files: list[UploadFile] = File(  # noqa: B008
         ..., description="List of source documents (PDF, DOCX, JPG, PNG)."
     ),
     notes: str = Form("", description="Optional free-text notes from the user."),
 ):
-    """
-    Initiates the report generation process.
+    """Initiates the report generation process.
 
     Accepts uploaded files and optional notes, then streams back NDJSON events
     representing the generation progress. The stream includes status updates,
@@ -125,10 +126,10 @@ async def generate(
 @router.post("/generate-with-clarifications", dependencies=[Depends(verify_api_key)])
 @handle_docx_generation_errors
 async def generate_with_clarifications(
-    payload: ClarificationPayload, request_id: str  # Injected by decorator
+    payload: ClarificationPayload,
+    request_id: str,  # Injected by decorator
 ):
-    """
-    Receives user clarifications, runs the full report generation pipeline,
+    """Receives user clarifications, runs the full report generation pipeline,
     and returns the final DOCX document directly.
 
     This endpoint is used after the `/generate` stream yields a
@@ -153,9 +154,7 @@ async def generate_with_clarifications(
 
     # build_report_with_clarifications returns a ReportContext instance directly.
     # The previous comment and dict conversion were outdated.
-    final_ctx_model: ReportContext = await build_report_with_clarifications(
-        payload, request_id=request_id
-    )
+    final_ctx_model: ReportContext = await build_report_with_clarifications(payload, request_id=request_id)
 
     # Generate DOCX directly from the final context model
     template_path_str = str(settings.template_path)
@@ -177,8 +176,7 @@ async def finalize_report(
     final_ctx_payload: ReportContext,  # Now expects ReportContext directly
     request_id: str,  # Injected by decorator
 ):
-    """
-    Generates the final DOCX report from the provided context data.
+    """Generates the final DOCX report from the provided context data.
 
     This endpoint is used after the `/generate` stream successfully yields
     a `data` event containing the complete report context.

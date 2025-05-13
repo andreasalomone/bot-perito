@@ -6,7 +6,8 @@ from fastapi.responses import StreamingResponse
 
 from app.core.exceptions import PipelineError
 from app.models.report_models import ReportContext  # Import ReportContext
-from app.services.doc_builder import DocBuilderError, inject
+from app.services.doc_builder import DocBuilderError
+from app.services.doc_builder import inject
 
 __all__ = [
     "_generate_and_stream_docx",
@@ -18,9 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Constants used for the generated DOCX ------------------------------------------------
 DEFAULT_REPORT_FILENAME = "report.docx"
-DOCX_MEDIA_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 async def _generate_and_stream_docx(
@@ -29,7 +28,8 @@ async def _generate_and_stream_docx(
     request_id: str,
 ) -> StreamingResponse:
     """Inject the *final_context* ReportContext object into the Word template and stream it back to
-    the client as an attachment."""
+    the client as an attachment.
+    """
     try:
         # Pass the final_context ReportContext object directly to inject
         docx_bytes = inject(str(template_path), final_context)
@@ -37,14 +37,10 @@ async def _generate_and_stream_docx(
         return StreamingResponse(
             iter([docx_bytes]),
             media_type=DOCX_MEDIA_TYPE,
-            headers={
-                "Content-Disposition": f"attachment; filename={DEFAULT_REPORT_FILENAME}"
-            },
+            headers={"Content-Disposition": f"attachment; filename={DEFAULT_REPORT_FILENAME}"},
         )
     except DocBuilderError as e:
-        logger.error(
-            "[%s] Document builder error: %s", request_id, str(e), exc_info=True
-        )
+        logger.error("[%s] Document builder error: %s", request_id, str(e), exc_info=True)
         raise e
     except Exception as e:
         logger.error(
@@ -53,6 +49,4 @@ async def _generate_and_stream_docx(
             str(e),
             exc_info=True,
         )
-        raise PipelineError(
-            "An unexpected error occurred while generating the final DOCX document."
-        ) from e
+        raise PipelineError("An unexpected error occurred while generating the final DOCX document.") from e

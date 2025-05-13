@@ -16,9 +16,7 @@ def load_style_samples() -> str:
     for docx_file in ref_path.glob("*.docx"):
         try:
             doc = Document(str(docx_file))
-            para_text = "\n".join(
-                p.text for p in doc.paragraphs[: settings.max_style_paragraphs]
-            )
+            para_text = "\n".join(p.text for p in doc.paragraphs[: settings.max_style_paragraphs])
             chunks.append(para_text.strip())
         except Exception:
             continue  # skip corrupt/unsupported files

@@ -2,6 +2,11 @@
 
 import { MAX_FILE_SIZE, MAX_TOTAL_SIZE, DEFAULT_FILENAME } from './config.js';
 
+// --- State Tracking ---
+export let isErrorActive = false;
+export let isClarificationUIVisible = false;
+let activeRequestArtifacts = null; // Variable to store requestArtifacts
+
 // --- DOM Elements ---
 export const form = document.getElementById('frm');
 export const spinner = document.getElementById('spin');
@@ -42,6 +47,7 @@ export const showSuccess = (message) => {
   if (statusMessageElement) statusMessageElement.textContent = message;
   hideSpinner();
   enableSubmitButton();
+  isErrorActive = false;
 };
 
 export const showGeneralError = (message) => {
@@ -49,6 +55,7 @@ export const showGeneralError = (message) => {
   console.error('General Error:', message);
   hideSpinner();
   enableSubmitButton();
+  isErrorActive = true;
 };
 
 export const showApiError = (message) => {
@@ -56,6 +63,7 @@ export const showApiError = (message) => {
   console.error('API Error:', message);
   hideSpinner();
   enableSubmitButton();
+  isErrorActive = true;
 };
 
 export const showStreamError = (message) => {
@@ -63,6 +71,7 @@ export const showStreamError = (message) => {
     console.error('Stream Error:', message);
     hideSpinner();
     enableSubmitButton();
+    isErrorActive = true;
 };
 
 // --- File Validation ---
@@ -71,7 +80,8 @@ export const validateFiles = () => {
   const files = fileInput.files;
   if (files.length === 0) {
     disableSubmitButton(); // Disable if no files are selected
-    return true; // Or false, depending on desired behavior for empty selection
+    updateStatus('Seleziona almeno un file per continuare.');
+    return false; // Return false to prevent form submission
   }
 
   console.log("Files selected:", Array.from(files).map(f => f.name).join(', '));
@@ -123,6 +133,9 @@ export const displayClarificationUI = (missingFields, requestArtifacts, clarific
 
   hideSpinner(); // Hide spinner when asking for clarification
   clarificationUIElement.innerHTML = ''; // Clear previous
+  isClarificationUIVisible = true;
+  isErrorActive = false;
+  activeRequestArtifacts = requestArtifacts; // Store artifacts in variable
 
   const formFragment = document.createDocumentFragment();
 
@@ -155,7 +168,6 @@ export const displayClarificationUI = (missingFields, requestArtifacts, clarific
   submitClarificationsButton.type = 'button';
   submitClarificationsButton.id = 'submit-clarifications';
   submitClarificationsButton.textContent = 'Invia Chiarimenti e Genera Report';
-  submitClarificationsButton.dataset.requestArtifacts = JSON.stringify(requestArtifacts);
   submitClarificationsButton.dataset.missingFields = JSON.stringify(missingFields);
   submitClarificationsButton.classList.add('clarification-submit-button');
   formFragment.appendChild(submitClarificationsButton);
@@ -172,7 +184,11 @@ export const displayClarificationUI = (missingFields, requestArtifacts, clarific
 
 export const hideClarificationUI = () => {
   if(clarificationUIElement) clarificationUIElement.style.display = 'none';
+  isClarificationUIVisible = false;
+  activeRequestArtifacts = null; // Clear artifacts when UI is hidden
 };
+
+export const getActiveRequestArtifacts = () => activeRequestArtifacts; // Getter
 
 export const getClarificationInputs = (missingFields) => {
     const userClarifications = {};

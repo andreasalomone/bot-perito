@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import AsyncGenerator, List
+from collections.abc import AsyncGenerator
 
 # Import custom exceptions
 from app.core.exceptions import PipelineError
@@ -48,35 +48,35 @@ class PipelineService:
         request_id: str,
         template_excerpt: str,
         corpus: str,
-        imgs: List[str],  # Keep imgs param even if not used in current steps
+        imgs: list[str],  # Keep imgs param even if not used in current steps
         notes: str,
         reference_style_text: str,
     ) -> AsyncGenerator[str, None]:
-        logger.info(
-            "[%s] Starting pipeline run with corpus length %d", request_id, len(corpus)
-        )
+        logger.info("[%s] Starting pipeline run with corpus length %d", request_id, len(corpus))
         try:
             yield json.dumps(
-                {"type": "status", "message": "Initializing report generation..."}
+                {
+                    "type": "status",
+                    "message": "Initializing report generation...",
+                }
             )
 
             # --- Input Validation ---
             if not template_excerpt:
-                raise PipelineError(
-                    "Input validation failed: Template excerpt is missing."
-                )
+                raise PipelineError("Input validation failed: Template excerpt is missing.")
             if not corpus:
                 raise PipelineError("Input validation failed: Corpus is missing.")
             # NOTE: 'imgs' is currently unused by the core pipeline steps (outline, expand, harmonize)
             # but is kept for potential future use or compatibility with callers.
 
             yield json.dumps(
-                {"type": "status", "message": "Generating report outline..."}
+                {
+                    "type": "status",
+                    "message": "Generating report outline...",
+                }
             )
             # 1. Outline - Use OutlineService
-            outline = await self.outline_service.generate_outline(
-                request_id, template_excerpt, corpus, notes
-            )
+            outline = await self.outline_service.generate_outline(request_id, template_excerpt, corpus, notes)
             yield json.dumps(
                 {
                     "type": "status",
@@ -88,7 +88,10 @@ class PipelineService:
             # for passing necessary data between steps if needed, but primarily for expansion
 
             yield json.dumps(
-                {"type": "status", "message": "Expanding report sections..."}
+                {
+                    "type": "status",
+                    "message": "Expanding report sections...",
+                }
             )
             # 3. Espandi sezioni - Use SectionExpansionService
             sections = {}
@@ -117,14 +120,18 @@ class PipelineService:
                 )
 
             yield json.dumps(
-                {"type": "status", "message": "Harmonizing report content..."}
+                {
+                    "type": "status",
+                    "message": "Harmonizing report content...",
+                }
             )
             # 4. Armonizza - Use HarmonizationService
-            harmonized_sections_dict = await self.harmonization_service.harmonize(
-                request_id, sections, reference_style_text
-            )
+            harmonized_sections_dict = await self.harmonization_service.harmonize(request_id, sections, reference_style_text)
             yield json.dumps(
-                {"type": "status", "message": "Content harmonization complete."}
+                {
+                    "type": "status",
+                    "message": "Content harmonization complete.",
+                }
             )
 
             logger.info("[%s] Pipeline completed successfully", request_id)
@@ -152,9 +159,7 @@ class PipelineService:
             yield json.dumps({"type": "error", "message": error_message})
         except Exception as e:
             error_message = f"An unexpected problem occurred in the pipeline: {str(e)}"
-            logger.exception(
-                "[%s] Pipeline run failed with unexpected error", request_id
-            )
+            logger.exception("[%s] Pipeline run failed with unexpected error", request_id)
             yield json.dumps(
                 {
                     "type": "error",

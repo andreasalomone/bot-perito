@@ -1,7 +1,7 @@
 import base64
 import io
 import logging
-from typing import BinaryIO, Tuple
+from typing import BinaryIO
 
 import pdfplumber
 from docx import Document
@@ -48,7 +48,7 @@ def _docx_to_text(f: BinaryIO) -> str:
         raise ExtractorError("Failed to extract text from DOCX") from e
 
 
-def _image_handler(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
+def _image_handler(fname: str, f: BinaryIO, request_id: str) -> tuple[str, str]:
     """Return (text, img_token). img_token is base64 if vision enabled."""
     logger.info("[%s] Processing image file: %s", request_id, fname)
 
@@ -58,9 +58,7 @@ def _image_handler(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
         logger.debug("[%s] OCR extracted %d chars", request_id, len(text.strip()))
 
         if len(text.strip()) > 30 or not settings.allow_vision:
-            logger.info(
-                "[%s] Using OCR text (length > 30 or vision disabled)", request_id
-            )
+            logger.info("[%s] Using OCR text (length > 30 or vision disabled)", request_id)
             return text, ""  # good OCR or vision disabled
 
         # no text ➜ pass downsized image to LLM
@@ -68,23 +66,20 @@ def _image_handler(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
             f.seek(0)
             img = Image.open(f).convert("RGB")
             img.thumbnail(
-                (settings.image_thumbnail_width, settings.image_thumbnail_height)
+                (
+                    settings.image_thumbnail_width,
+                    settings.image_thumbnail_height,
+                )
             )  # Use settings
             buf = io.BytesIO()
-            img.save(
-                buf, format="JPEG", quality=settings.image_jpeg_quality
-            )  # Use settings
+            img.save(buf, format="JPEG", quality=settings.image_jpeg_quality)  # Use settings
             buf.seek(0)
             b64 = base64.b64encode(buf.read()).decode()
             token = f"data:image/jpeg;base64,{b64}"
-            logger.debug(
-                "[%s] Generated base64 token, length: %d", request_id, len(token)
-            )
+            logger.debug("[%s] Generated base64 token, length: %d", request_id, len(token))
             return "", token
         except Exception as e:
-            logger.error(
-                "[%s] Failed to process image: %s", request_id, str(e), exc_info=True
-            )
+            logger.error("[%s] Failed to process image: %s", request_id, str(e), exc_info=True)
             raise ExtractorError("Failed to process image file") from e
 
     except Exception as e:
@@ -92,9 +87,8 @@ def _image_handler(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
         raise ExtractorError(f"Failed to handle image file: {fname}") from e
 
 
-def extract_damage_image(f: BinaryIO, request_id: str) -> Tuple[str, str]:
-    """
-    Always return ("", base64_token) so the vision model
+def extract_damage_image(f: BinaryIO, request_id: str) -> tuple[str, str]:
+    """Always return ("", base64_token) so the vision model
     receives every damage photo even if OCR finds text.
     """
     logger.info("[%s] Processing damage image", request_id)
@@ -103,12 +97,13 @@ def extract_damage_image(f: BinaryIO, request_id: str) -> Tuple[str, str]:
         f.seek(0)
         img = Image.open(f).convert("RGB")
         img.thumbnail(
-            (settings.image_thumbnail_width, settings.image_thumbnail_height)
+            (
+                settings.image_thumbnail_width,
+                settings.image_thumbnail_height,
+            )
         )  # Use settings
         buf = io.BytesIO()
-        img.save(
-            buf, format="JPEG", quality=settings.image_jpeg_quality
-        )  # Use settings
+        img.save(buf, format="JPEG", quality=settings.image_jpeg_quality)  # Use settings
         token = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
         logger.debug(
             "[%s] Generated base64 token for damage image, length: %d",
@@ -117,9 +112,7 @@ def extract_damage_image(f: BinaryIO, request_id: str) -> Tuple[str, str]:
         )
         return "", token
     except Exception as e:
-        logger.error(
-            "[%s] Failed to process damage image: %s", request_id, str(e), exc_info=True
-        )
+        logger.error("[%s] Failed to process damage image: %s", request_id, str(e), exc_info=True)
         raise ExtractorError("Failed to process damage image") from e
 
 
@@ -130,12 +123,10 @@ _HANDLERS = {
 }
 
 
-def extract(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
+def extract(fname: str, f: BinaryIO, request_id: str) -> tuple[str, str]:
     """Extract text and/or image token from a file based on its extension."""
     ext = fname.lower().split(".")[-1]
-    logger.info(
-        "[%s] Extracting content from file: %s (type: %s)", request_id, fname, ext
-    )
+    logger.info("[%s] Extracting content from file: %s (type: %s)", request_id, fname, ext)
 
     try:
         if ext in _HANDLERS:
@@ -180,10 +171,7 @@ def guard_corpus(corpus: str, request_id: str) -> str:
             original_len,
             settings.max_prompt_chars,
         )
-        return (
-            corpus[: settings.max_prompt_chars]
-            + "\n\n[TESTO TRONCATO PER LIMITE TOKEN]"
-        )
+        return corpus[: settings.max_prompt_chars] + "\n\n[TESTO TRONCATO PER LIMITE TOKEN]"
 
     logger.debug("[%s] Corpus length OK: %d chars", request_id, original_len)
     return corpus

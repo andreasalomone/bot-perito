@@ -1,7 +1,15 @@
 'use strict';
 
 import { apiKeyInput, showApiError, triggerDownload, updateStatus } from './ui.js';
-import { DEFAULT_FILENAME } from './config.js';
+import { DEFAULT_FILENAME, FINALIZE_ENDPOINT } from './config.js';
+
+// Custom error class for API errors that have already been shown to the user
+export class HandledApiError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'HandledApiError';
+  }
+}
 
 const getApiUrl = (endpoint) => {
   return window.location.hostname === 'localhost'
@@ -19,7 +27,7 @@ const handleApiErrorResponse = async (response) => {
     errorMsg = responseText || errorMsg;
   }
   showApiError(errorMsg);
-  throw new Error(errorMsg); // Re-throw for main handler catch block
+  throw new HandledApiError(errorMsg); // Throw specialized error
 };
 
 export const fetchStream = async (endpoint, options) => {
@@ -35,7 +43,7 @@ export const fetchStream = async (endpoint, options) => {
   if (response.status === 413) {
     const errorMsg = 'File troppo grande o troppi allegati. Riprova con file più piccoli.';
     showApiError(errorMsg);
-    throw new Error(errorMsg); // Re-throw
+    throw new HandledApiError(errorMsg); // Use specialized error
   }
 
   if (!response.ok) {
@@ -48,7 +56,7 @@ export const fetchStream = async (endpoint, options) => {
 
 export const finalizeAndDownloadReport = async (finalCtx) => {
   updateStatus('Finalizzazione del report e preparazione download...');
-  const apiUrl = getApiUrl('finalize-report'); // Use constant
+  const apiUrl = getApiUrl(FINALIZE_ENDPOINT);
 
   try {
     const response = await fetch(apiUrl, {
@@ -75,11 +83,10 @@ export const finalizeAndDownloadReport = async (finalCtx) => {
     }
     triggerDownload(blob, filename);
   } catch (err) {
-      // Error already shown by handleApiErrorResponse or fetch error
+      // Error already shown by handleApiErrorResponse
       console.error('Errore durante il fetch e download del report finalizzato:', err);
-      // No need to call showApiError again if handleApiErrorResponse was called
-      // If fetch itself failed, err might be a TypeError, show a general error
-      if (!(err instanceof Error && err.message.startsWith('Errore del server:'))) {
+      // Only show error if it's not already handled
+      if (!(err instanceof HandledApiError)) {
            showApiError(err.message || 'Errore di rete o finalizzazione');
       }
   }

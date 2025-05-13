@@ -1,12 +1,1 @@
-[tool.black]
-line-length = 88
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203"]
-
 # [tool.mypy] section removed; use mypy.ini at repo root for configuration
-
-[tool.isort]
-profile = "black"
-line_length = 88

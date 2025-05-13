@@ -1,14 +1,13 @@
-from typing import Any, Dict, List
+from typing import Any
 
 
 class ClarificationService:
     def identify_missing_fields(
         self,
-        llm_response: Dict[str, Any],
-        critical_fields_config: Dict[str, Dict[str, str]],
-    ) -> List[Dict[str, str]]:
-        """
-        Identifies fields from the llm_response that are None and are present in critical_fields_config.
+        llm_response: dict[str, Any],
+        critical_fields_config: dict[str, dict[str, str]],
+    ) -> list[dict[str, str]]:
+        """Identifies fields from the llm_response that are None and are present in critical_fields_config.
 
         Args:
             llm_response: The parsed JSON output from the LLM.

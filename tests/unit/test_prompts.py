@@ -215,7 +215,8 @@ def test_harmonize_prompt_all_data():
 def test_harmonize_prompt_no_optional_data():
     template = pipeline_test_env.get_template("harmonize_prompt.jinja2")
     rendered_prompt = template.render(
-        sections_input_for_prompt='{"s1": "abc"}', extra_styles_example=""  # Empty
+        sections_input_for_prompt='{"s1": "abc"}',
+        extra_styles_example="",  # Empty
     )
     assert '{"s1": "abc"}' in rendered_prompt
     assert "(Nessun esempio di stile fornito)" in rendered_prompt  # Check fallback text

@@ -7,7 +7,8 @@ providing type validation and default values.
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # Default list of CORS allowed origins
@@ -50,9 +51,7 @@ class Settings(BaseSettings):
     max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
     max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
     reference_dir: Path = Field(Path("app/templates/reference"), env="REFERENCE_DIR")
-    template_path: Path = Field(
-        Path("app/templates/template.docx"), env="TEMPLATE_PATH"
-    )
+    template_path: Path = Field(Path("app/templates/template.docx"), env="TEMPLATE_PATH")
     max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
     max_images_in_report: int = Field(10, env="MAX_IMAGES_IN_REPORT")
 
@@ -102,8 +101,7 @@ class Settings(BaseSettings):
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v):
-        """
-        Assembles the list of CORS allowed origins.
+        """Assembles the list of CORS allowed origins.
 
         If 'v' is a string, it splits it by commas. If 'v' is already a list,
         it's used directly. Otherwise, returns the default list of origins.

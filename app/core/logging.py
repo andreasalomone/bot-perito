@@ -5,9 +5,7 @@ def setup_logging() -> None:
     """Configures application-wide logging using dictConfig."""
     config = {
         "version": 1,
-        "formatters": {
-            "default": {"format": "%(asctime)s %(levelname)s [%(name)s] %(message)s"}
-        },
+        "formatters": {"default": {"format": "%(asctime)s %(levelname)s [%(name)s] %(message)s"}},
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",

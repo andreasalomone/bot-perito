@@ -7,10 +7,8 @@ HTTP routing while core business logic lives in composable modules.
 """
 
 from .clarification_flow import build_report_with_clarifications  # noqa: F401
-from .context_preparation import (  # noqa: F401
-    _extract_base_context,
-    _load_template_excerpt,
-)
+from .context_preparation import _extract_base_context  # noqa: F401
+from .context_preparation import _load_template_excerpt  # noqa: F401
 
 # Re-export most commonly-used helpers for convenience
 from .file_processing import _validate_and_extract_files  # noqa: F401

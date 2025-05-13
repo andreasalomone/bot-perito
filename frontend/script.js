@@ -16,11 +16,13 @@ import {
     updateStatus,
     showGeneralError,
     hideClarificationUI,
-    getClarificationInputs
+    getClarificationInputs,
+    getActiveRequestArtifacts
 } from './ui.js';
 
 import {
     fetchStream,
+    HandledApiError
 } from './api.js';
 
 import {
@@ -35,25 +37,6 @@ import {
 // File size limits matching backend configuration
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB per file
 const MAX_TOTAL_SIZE = 100 * 1024 * 1024; // 100MB total upload
-
-// Helper functions
-const getApiUrl = (endpoint) => {
-  return window.location.hostname === 'localhost'
-    ? `http://localhost:8000/${endpoint}`
-    : `/api/${endpoint}`;
-};
-
-const handleApiError = async (response) => {
-  let errorMsg = `Errore del server: ${response.status}`;
-  const responseText = await response.text();
-  try {
-    const errorData = JSON.parse(responseText);
-    errorMsg = errorData.detail || errorData.message || errorMsg;
-  } catch (jsonError) {
-    errorMsg = responseText || errorMsg;
-  }
-  throw new Error(errorMsg);
-};
 
 // --- Event Listeners ---
 
@@ -80,12 +63,9 @@ form.addEventListener('submit', async (e) => {
         await processStreamResponse(response, handleSubmitClarifications);
 
     } catch (err) {
-        // UI update (spinner hide, button enable, message) is handled
-        // within the specific error functions (showApiError, showGeneralError etc.)
-        // or by handleApiErrorResponse called within fetchStream
-        // Log the error here if it wasn't handled by those
-        if (!(err instanceof Error && (err.message.includes('Errore del server') || err.message.includes('File troppo grande')))){
-             showGeneralError(err.message);
+        // Don't show error if it's already been handled
+        if (!(err instanceof HandledApiError)) {
+            showGeneralError(err.message);
         }
         console.error('Errore durante la generazione iniziale:', err);
     }
@@ -102,7 +82,7 @@ async function handleSubmitClarifications(event) {
 
     try {
         const missingFields = JSON.parse(submitClarificationsButton.dataset.missingFields || '[]');
-        const requestArtifacts = JSON.parse(submitClarificationsButton.dataset.requestArtifacts || 'null');
+        const requestArtifacts = getActiveRequestArtifacts();
         const userClarifications = getClarificationInputs(missingFields);
 
         const payload = {
@@ -120,9 +100,9 @@ async function handleSubmitClarifications(event) {
         await processStreamResponse(response, handleSubmitClarifications);
 
     } catch (err) {
-        // Error handling similar to the main submit handler
-         if (!(err instanceof Error && (err.message.includes('Errore del server') || err.message.includes('File troppo grande')))){
-             showGeneralError(err.message);
+        // Don't show error if it's already been handled
+        if (!(err instanceof HandledApiError)) {
+            showGeneralError(err.message);
         }
         console.error('Errore durante la generazione con chiarimenti:', err);
     }

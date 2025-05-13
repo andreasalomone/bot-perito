@@ -2,7 +2,8 @@
 
 import logging
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
+from fastapi import HTTPException
 from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
@@ -14,8 +15,7 @@ api_key_header = APIKeyHeader(name="X-API-Key")
 
 
 async def verify_api_key(key: str = Depends(api_key_header)) -> bool:
-    """
-    Verifies the provided API key against the server's configured API key.
+    """Verifies the provided API key against the server's configured API key.
 
     Used as a FastAPI dependency to protect routes.
 

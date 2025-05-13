@@ -63,6 +63,9 @@ frontend/build/
 # Test Fixtures
 /tests/fixtures/
 
+# Project data (if not versioned)
+data/
+
 # Cursor Rules
 .cursorrules
 /.cursor/rules

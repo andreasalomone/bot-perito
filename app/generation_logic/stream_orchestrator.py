@@ -1,20 +1,20 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from fastapi import UploadFile
 
 from app.core.config import settings
-from app.core.exceptions import ConfigurationError, PipelineError
-from app.generation_logic.context_preparation import (
-    _extract_base_context,
-    _load_template_excerpt,
-)
+from app.core.exceptions import ConfigurationError
+from app.core.exceptions import PipelineError
+from app.generation_logic.context_preparation import _extract_base_context
+from app.generation_logic.context_preparation import _load_template_excerpt
 from app.generation_logic.file_processing import _validate_and_extract_files
 from app.services.clarification_service import ClarificationService
 from app.services.extractor import ExtractorError
-from app.services.llm import JSONParsingError, LLMError
+from app.services.llm import JSONParsingError
+from app.services.llm import LLMError
 from app.services.pipeline import PipelineService
 from app.services.style_loader import load_style_samples
 
@@ -33,13 +33,13 @@ logger = logging.getLogger(__name__)
 
 def _create_stream_event(
     event_type: str,
-    message: Optional[str] = None,
-    payload: Optional[Dict[str, Any]] = None,
-    missing_fields: Optional[List[Dict[str, str]]] = None,
-    request_artifacts: Optional[Dict[str, Any]] = None,
+    message: str | None = None,
+    payload: dict[str, Any] | None = None,
+    missing_fields: list[dict[str, str]] | None = None,
+    request_artifacts: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a Server-Sent Event (SSE)-style dict to an NDJSON line."""
-    event: Dict[str, Any] = {"type": event_type}
+    event: dict[str, Any] = {"type": event_type}
     if message is not None:
         event["message"] = message
     if payload is not None:
@@ -57,7 +57,7 @@ def _create_stream_event(
 
 
 async def _stream_report_generation_logic(
-    files: List[UploadFile],
+    files: list[UploadFile],
     notes: str,
 ):
     """Orchestrate the end-to-end report generation, yielding NDJSON events that
@@ -71,7 +71,7 @@ async def _stream_report_generation_logic(
     )
 
     original_notes = notes
-    section_map_from_pipeline: Optional[Dict[str, Any]] = None
+    section_map_from_pipeline: dict[str, Any] | None = None
 
     try:
         template_path_str = str(settings.template_path)
@@ -85,9 +85,7 @@ async def _stream_report_generation_logic(
         # ------------------------------------------------------------------
         # 1. Validate & extract content
         # ------------------------------------------------------------------
-        yield _create_stream_event(
-            "status", message="Validating inputs and extracting content…"
-        )
+        yield _create_stream_event("status", message="Validating inputs and extracting content…")
         corpus, img_tokens = await _validate_and_extract_files(files, request_id)
         yield _create_stream_event(
             "status",
@@ -104,9 +102,7 @@ async def _stream_report_generation_logic(
         # ------------------------------------------------------------------
         # 3. Base context via LLM
         # ------------------------------------------------------------------
-        yield _create_stream_event(
-            "status", message="Extracting base document context (LLM)…"
-        )
+        yield _create_stream_event("status", message="Extracting base document context (LLM)…")
         base_ctx = await _extract_base_context(
             template_excerpt,
             corpus,
@@ -121,9 +117,7 @@ async def _stream_report_generation_logic(
         # 4. Clarification step
         # ------------------------------------------------------------------
         clarification_service = ClarificationService()
-        missing_info_list = clarification_service.identify_missing_fields(
-            base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION
-        )
+        missing_info_list = clarification_service.identify_missing_fields(base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION)
 
         if missing_info_list:
             logger.info(
@@ -131,7 +125,7 @@ async def _stream_report_generation_logic(
                 request_id,
                 len(missing_info_list),
             )
-            request_artifacts_data: Dict[str, Any] = {
+            request_artifacts_data: dict[str, Any] = {
                 "original_corpus": corpus,
                 "image_tokens": img_tokens,
                 "notes": original_notes,
@@ -231,9 +225,7 @@ async def _stream_report_generation_logic(
         )
         yield _create_stream_event("error", message=f"Configuration error: {str(ce)}")
     except ExtractorError as ee:  # Catch specific extractor errors
-        logger.error(
-            "[%s] ExtractorError during stream: %s", request_id, str(ee), exc_info=False
-        )
+        logger.error("[%s] ExtractorError during stream: %s", request_id, str(ee), exc_info=False)
         yield _create_stream_event("error", message=f"File extraction error: {str(ee)}")
     except PipelineError as pe:
         logger.error(
@@ -242,16 +234,10 @@ async def _stream_report_generation_logic(
             str(pe),
             exc_info=False,  # Usually logged deeper if it's a re-raise
         )
-        yield _create_stream_event(
-            "error", message=f"Pipeline processing error: {str(pe)}"
-        )
+        yield _create_stream_event("error", message=f"Pipeline processing error: {str(pe)}")
     except LLMError as le:  # Specific LLM errors
-        logger.error(
-            "[%s] LLMError during stream: %s", request_id, str(le), exc_info=False
-        )
-        yield _create_stream_event(
-            "error", message=f"Language model processing error: {str(le)}"
-        )
+        logger.error("[%s] LLMError during stream: %s", request_id, str(le), exc_info=False)
+        yield _create_stream_event("error", message=f"Language model processing error: {str(le)}")
     except JSONParsingError as jpe:  # Specific JSON parsing errors
         logger.error(
             "[%s] JSONParsingError during stream: %s",
@@ -267,8 +253,6 @@ async def _stream_report_generation_logic(
             str(e),
             exc_info=True,  # Log full trace for truly unexpected errors
         )
-        yield _create_stream_event(
-            "error", message=f"An unexpected server error occurred: {str(e)}"
-        )
+        yield _create_stream_event("error", message=f"An unexpected server error occurred: {str(e)}")
     finally:
         logger.info("[%s] Stream generation logic finished.", request_id)

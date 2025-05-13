@@ -2,12 +2,15 @@ import json
 import logging
 import pathlib
 import re
-from typing import Any, Dict
+from typing import Any
 from uuid import uuid4
 
 import jinja2
-from openai import AsyncOpenAI, OpenAIError
-from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import AsyncOpenAI
+from openai import OpenAIError
+from tenacity import retry
+from tenacity import stop_after_attempt
+from tenacity import wait_exponential
 
 from app.core.config import settings
 
@@ -26,9 +29,7 @@ class JSONParsingError(Exception):
 
 # --- Reusable Jinja2 Environment ---
 # Initialize Jinja2 environment for prompt templates
-PROMPT_DIR = (
-    pathlib.Path(__file__).parent.parent / "services/prompt_templates"
-)  # Adjusted path
+PROMPT_DIR = pathlib.Path(__file__).parent.parent / "services/prompt_templates"  # Adjusted path
 try:
     loader = jinja2.FileSystemLoader(PROMPT_DIR)
     env = jinja2.Environment(loader=loader)
@@ -59,14 +60,11 @@ client = AsyncOpenAI(
 @retry(
     wait=wait_exponential(multiplier=1, min=2, max=10),
     stop=stop_after_attempt(3),
-    retry=lambda exc: isinstance(exc, OpenAIError)
-    and getattr(exc, "status", None) in {429, 500, 502, 503, 504},
+    retry=lambda exc: isinstance(exc, OpenAIError) and getattr(exc, "status", None) in {429, 500, 502, 503, 504},
 )
 async def call_llm(prompt: str) -> str:
     request_id = str(uuid4())
-    logger.info(
-        "[%s] Making LLM API call with model: %s", request_id, settings.model_id
-    )
+    logger.info("[%s] Making LLM API call with model: %s", request_id, settings.model_id)
 
     try:
         rsp = await client.chat.completions.create(
@@ -76,9 +74,7 @@ async def call_llm(prompt: str) -> str:
             ],
         )
         content = (rsp.choices[0].message.content or "").strip()
-        logger.debug(
-            "[%s] LLM response received, length: %d chars", request_id, len(content)
-        )
+        logger.debug("[%s] LLM response received, length: %d chars", request_id, len(content))
         return content
     except OpenAIError as e:
         logger.error("[%s] OpenAI API error: %s", request_id, str(e), exc_info=True)
@@ -92,21 +88,16 @@ async def call_llm(prompt: str) -> str:
 # JSON extractor helper
 # ---------------------------------------------------------------
 def extract_json(text: str) -> dict:
-    """
-    Tenta di deserializzare `text` come JSON puro.
+    """Tenta di deserializzare `text` come JSON puro.
     Se fallisce, estrae il primo blocco { … } con regex e riprova.
     """
     request_id = str(uuid4())
-    logger.debug(
-        "[%s] Attempting to parse JSON response, length: %d", request_id, len(text)
-    )
+    logger.debug("[%s] Attempting to parse JSON response, length: %d", request_id, len(text))
 
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.warning(
-            "[%s] Initial JSON parse failed, attempting regex extraction", request_id
-        )
+        logger.warning("[%s] Initial JSON parse failed, attempting regex extraction", request_id)
         try:
             match = re.search(r"\{.*\}", text, re.S)
             if not match:
@@ -135,21 +126,16 @@ async def execute_llm_step_with_template(
     request_id: str,
     step_name: str,
     template_name: str,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     expected_type: type = dict,  # Expect a dict by default
 ) -> Any:
-    """
-    Executes a single LLM step: load template, render, call LLM, parse JSON.
+    """Executes a single LLM step: load template, render, call LLM, parse JSON.
     Handles common LLM and JSON parsing errors, raising appropriate exceptions.
     """
     logger.debug("[%s] Executing LLM step: %s", request_id, step_name)
     if env is None:
-        logger.error(
-            "[%s] Jinja2 environment not initialized for step %s", request_id, step_name
-        )
-        raise LLMError(
-            "Internal configuration error: Template environment not available."
-        )
+        logger.error("[%s] Jinja2 environment not initialized for step %s", request_id, step_name)
+        raise LLMError("Internal configuration error: Template environment not available.") from None
 
     try:
         template = env.get_template(template_name)
@@ -190,13 +176,9 @@ async def execute_llm_step_with_template(
             template_name,
             step_name,
         )
-        raise LLMError(
-            f"Internal configuration error: Template '{template_name}' not found."
-        )
+        raise LLMError(f"Internal configuration error: Template '{template_name}' not found.") from None
     except Exception as e:
-        logger.exception(
-            "[%s] Unexpected error in LLM step '%s'", request_id, step_name
-        )
+        logger.exception("[%s] Unexpected error in LLM step '%s'", request_id, step_name)
         raise LLMError(f"Unexpected error during '{step_name}' step.") from e
 
 
@@ -217,24 +199,20 @@ def build_prompt(
     notes: str,
     reference_style_text: str,
 ) -> str:
-    """
-    Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
+    """Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
     Il testo finale verrà inserito da docxtpl, quindi qui non serve
     formattazione.
     """
     if env is None:
         logger.error("Jinja2 environment not initialized for build_prompt")
         # Handle error appropriately - maybe return a default prompt or raise
-        raise LLMError(
-            "Internal configuration error: Template environment not available."
-        )
+        raise LLMError("Internal configuration error: Template environment not available.") from None
 
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------
     extra_styles = ""
     if reference_style_text:
         extra_styles = (
-            "\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n"
-            f"{reference_style_text}\\n>>>"
+            f"\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n{reference_style_text}\\n>>>"
         )
 
     # --- eventuali immagini -------------------------------------------------
@@ -255,9 +233,7 @@ def build_prompt(
         return prompt_content
     except jinja2.TemplateNotFound:
         logger.error("Template not found: build_prompt.jinja2")
-        raise LLMError(
-            "Internal configuration error: Template 'build_prompt.jinja2' not found."
-        )
+        raise LLMError("Internal configuration error: Template 'build_prompt.jinja2' not found.") from None
     except Exception as e:
         logger.exception("Unexpected error building prompt")
         raise LLMError("Unexpected error building prompt.") from e

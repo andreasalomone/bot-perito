@@ -3,7 +3,6 @@ import io
 # import json # No longer needed for json.loads
 import logging
 import re
-from typing import Dict  # Remove unused Any import
 from uuid import uuid4
 
 from docx import Document
@@ -24,7 +23,7 @@ class DocBuilderError(Exception):
 BOLD_RE = re.compile(r"\\*\\*(.+?)\\*\\*")
 
 # Maps the DOCX template tags (keys) to the expected keys in the context dictionary (values).
-TEMPLATE_TAG_TO_CONTEXT_KEY_MAPPING: Dict[str, str] = {
+TEMPLATE_TAG_TO_CONTEXT_KEY_MAPPING: dict[str, str] = {
     "CLIENT": "client",
     "CLIENTADDRESS1": "client_address1",
     "CLIENTADDRESS2": "client_address2",
@@ -54,7 +53,7 @@ TEMPLATE_TAG_TO_CONTEXT_KEY_MAPPING: Dict[str, str] = {
 
 # Maps the section placeholder tags found in the template (keys)
 # to the expected keys in the context dictionary that hold their content (values).
-SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING: Dict[str, str] = {
+SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING: dict[str, str] = {
     "{{DINAMICA_EVENTI}}": "dinamica_eventi",
     "{{ACCERTAMENTI}}": "accertamenti",
     "{{QUANTIFICAZIONE}}": "quantificazione",
@@ -81,14 +80,11 @@ def _add_markdown(par, txt: str):  # Added type hint for txt
 
 
 def inject(template_path: str, context: ReportContext) -> bytes:
-    """
-    Inject ReportContext content into the document template.
+    """Inject ReportContext content into the document template.
     Returns the document as bytes.
     """
     request_id = str(uuid4())
-    logger.info(
-        "[%s] Starting document generation with template: %s", request_id, template_path
-    )
+    logger.info("[%s] Starting document generation with template: %s", request_id, template_path)
 
     try:
         # Load template
@@ -96,9 +92,7 @@ def inject(template_path: str, context: ReportContext) -> bytes:
             tpl = DocxTemplate(template_path)
             logger.debug("[%s] Successfully loaded template", request_id)
         except Exception as e:
-            logger.error(
-                "[%s] Failed to load template: %s", request_id, str(e), exc_info=True
-            )
+            logger.error("[%s] Failed to load template: %s", request_id, str(e), exc_info=True)
             raise DocBuilderError(f"Failed to load template: {template_path}") from e
 
         # JSON parsing is no longer needed here, context is already a dict
@@ -125,14 +119,10 @@ def inject(template_path: str, context: ReportContext) -> bytes:
                 if ctx_key not in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.values()
             }
             # Special handling for 'allegati' if it's a list, convert to string
-            allegati_content = getattr(
-                context, "allegati", []
-            )  # Default to empty list if missing
+            allegati_content = getattr(context, "allegati", [])  # Default to empty list if missing
             if isinstance(allegati_content, list):
                 # Ensure items are strings before joining
-                mapping_data["ALLEGATI"] = "\\n".join(
-                    str(item) for item in allegati_content if item is not None
-                )
+                mapping_data["ALLEGATI"] = "\\n".join(str(item) for item in allegati_content if item is not None)
             elif allegati_content is not None:
                 mapping_data["ALLEGATI"] = str(allegati_content)
             else:
@@ -140,14 +130,10 @@ def inject(template_path: str, context: ReportContext) -> bytes:
 
             # Add placeholders for sections to be filled later
             for _tag, _key in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items():
-                mapping_data[_tag.removeprefix("{{").removesuffix("}}")] = (
-                    _tag  # e.g., DINAMICA_EVENTI: "{{DINAMICA_EVENTI}}"
-                )
+                mapping_data[_tag.removeprefix("{{").removesuffix("}}")] = _tag  # e.g., DINAMICA_EVENTI: "{{DINAMICA_EVENTI}}"
 
             tpl.render(mapping_data)
-            logger.debug(
-                "[%s] Successfully rendered template with mapping_data", request_id
-            )
+            logger.debug("[%s] Successfully rendered template with mapping_data", request_id)
         except AttributeError as e:
             logger.error(
                 "[%s] Missing expected attribute in ReportContext for template rendering: %s",
@@ -163,9 +149,7 @@ def inject(template_path: str, context: ReportContext) -> bytes:
                 str(e),
                 exc_info=True,
             )
-            raise DocBuilderError(
-                "Failed to render template with initial mapping"
-            ) from e
+            raise DocBuilderError("Failed to render template with initial mapping") from e
 
         # ---------- 2 · inserisci paragrafi nelle sezioni ------------
         try:
@@ -200,11 +184,7 @@ def inject(template_path: str, context: ReportContext) -> bytes:
                         # Ensure content_string is a string before splitting
                         paragraphs_to_insert = [
                             t.strip()
-                            for t in (
-                                str(content_string)
-                                if content_string is not None
-                                else ""
-                            ).split("\\n\\n")
+                            for t in (str(content_string) if content_string is not None else "").split("\\n\\n")
                             if t.strip()
                         ]
 
@@ -213,12 +193,8 @@ def inject(template_path: str, context: ReportContext) -> bytes:
                             p.add_run("")
                         else:
                             for idx, para_text in enumerate(paragraphs_to_insert):
-                                target_par = (
-                                    p if idx == 0 else doc.add_paragraph(style=style)
-                                )
-                                if (
-                                    idx > 0
-                                ):  # Clear potentially duplicated content if using add_paragraph
+                                target_par = p if idx == 0 else doc.add_paragraph(style=style)
+                                if idx > 0:  # Clear potentially duplicated content if using add_paragraph
                                     target_par.clear()
                                 _add_markdown(target_par, para_text)
                         logger.debug(
