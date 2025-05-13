@@ -1,12 +1,49 @@
+"""Application configuration settings.
+
+This module defines the application-wide settings using Pydantic's BaseSettings.
+It allows for loading configurations from environment variables and .env files,
+providing type validation and default values.
+"""
+
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
+# Default list of CORS allowed origins
+DEFAULT_CORS_ORIGINS = [
+    "https://aiperito.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://localhost:3000",
+    "https://localhost:8000",
+]
+
 
 class Settings(BaseSettings):
+    """Manages application settings, loading them from environment variables or an .env file.
+
+    Attributes:
+        openrouter_api_key: API key for OpenRouter services.
+        model_id: Identifier for the language model to be used.
+        cleanup_ttl: Time-to-live in seconds for temporary files before cleanup.
+        allow_vision: Flag to enable or disable vision capabilities.
+        max_prompt_chars: Maximum characters allowed for a corpus input before truncation.
+        max_total_prompt_chars: Maximum characters allowed for a total assembled prompt.
+        reference_dir: Path to the directory containing reference style documents.
+        template_path: Path to the main DOCX template file.
+        max_style_paragraphs: Maximum number of paragraphs to extract from style reference documents.
+        max_images_in_report: Maximum number of images to include in the generated report.
+        api_key: General API key for securing internal API endpoints.
+        ocr_language: Language setting for OCR processing.
+        image_thumbnail_width: Width for generated image thumbnails.
+        image_thumbnail_height: Height for generated image thumbnails.
+        image_jpeg_quality: JPEG quality for generated image thumbnails.
+        cors_allowed_origins: List of allowed origins for CORS.
+        CRITICAL_FIELDS_FOR_CLARIFICATION: Configuration for fields requiring user clarification.
+    """
+
     openrouter_api_key: str | None = Field(None, env="OPENROUTER_API_KEY")
-    hf_api_token: str | None = Field(None, env="HF_API_TOKEN")
     model_id: str = Field("meta-llama/llama-4-maverick:free", env="MODEL_ID")
     cleanup_ttl: int = Field(900, env="CLEANUP_TTL")
     allow_vision: bool = Field(True, env="ALLOW_VISION")
@@ -21,14 +58,13 @@ class Settings(BaseSettings):
 
     api_key: str | None = Field(None, env="API_KEY")
 
+    ocr_language: str = Field("ita", env="OCR_LANGUAGE")
+    image_thumbnail_width: int = Field(512, env="IMAGE_THUMBNAIL_WIDTH")
+    image_thumbnail_height: int = Field(512, env="IMAGE_THUMBNAIL_HEIGHT")
+    image_jpeg_quality: int = Field(70, env="IMAGE_JPEG_QUALITY")
+
     cors_allowed_origins: list[str] = Field(
-        default=[
-            "https://aiperito.vercel.app",
-            "http://localhost:3000",
-            "http://localhost:8000",
-            "https://localhost:3000",
-            "https://localhost:8000",
-        ],
+        default=list(DEFAULT_CORS_ORIGINS),  # Use a copy of the default list
         env="CORS_ALLOWED_ORIGINS",
     )
 
@@ -66,18 +102,24 @@ class Settings(BaseSettings):
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v):
+        """
+        Assembles the list of CORS allowed origins.
+
+        If 'v' is a string, it splits it by commas. If 'v' is already a list,
+        it's used directly. Otherwise, returns the default list of origins.
+
+        Args:
+            v: The value from the environment or direct assignment.
+
+        Returns:
+            A list of strings representing allowed CORS origins.
+        """
         if isinstance(v, str) and v:
             return [origin.strip() for origin in v.split(",")]
         elif isinstance(v, list):
             return v
         # Return the default if env var is empty or not a string/list
-        return [
-            "https://aiperito.vercel.app",
-            "http://localhost:3000",
-            "http://localhost:8000",
-            "https://localhost:3000",
-            "https://localhost:8000",
-        ]
+        return list(DEFAULT_CORS_ORIGINS)  # Use a copy of the default list
 
 
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()

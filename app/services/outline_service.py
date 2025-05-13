@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import List
 
+from pydantic import ValidationError
+
+from app.core.exceptions import PipelineError  # Import from core exceptions
+from app.models.report_models import OutlineItem
 from app.services.llm import (  # Assuming PipelineError is defined elsewhere or replaced
     JSONParsingError,
     LLMError,
@@ -12,7 +16,7 @@ from app.services.llm import (  # Assuming PipelineError is defined elsewhere or
 # Define PipelineError or import from a central location
 # For now, assuming it might be defined in pipeline.py or a core exceptions file
 # If not, uncomment the definition below or import appropriately.
-from app.services.pipeline import PipelineError  # Example import
+# from app.services.pipeline import PipelineError  # Example import
 
 # class PipelineError(Exception):
 #     """Base exception for pipeline-related errors (defined here for example)"""
@@ -27,11 +31,25 @@ class OutlineService:
         template_excerpt: str,
         corpus: str,
         notes: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[OutlineItem]:
         """
         Generates a structured outline (list of sections with titles and bullets).
         """
         logger.info("[%s] Generating outline", request_id)
+
+        # Input validation
+        if not template_excerpt:
+            logger.warning(
+                "[%s] Outline generation called with empty template_excerpt.",
+                request_id,
+            )
+            raise PipelineError("Outline generation requires a template excerpt.")
+        if not corpus:
+            logger.warning(
+                "[%s] Outline generation called with empty corpus.", request_id
+            )
+            raise PipelineError("Outline generation requires a corpus.")
+
         try:
             context = {
                 "template_excerpt": template_excerpt,
@@ -52,12 +70,28 @@ class OutlineService:
                 logger.error("[%s] Empty outline list returned from LLM", request_id)
                 raise PipelineError("Empty outline generated")
 
+            validated_outline: List[OutlineItem] = []
+            for item_idx, item_data in enumerate(data):
+                try:
+                    validated_outline.append(OutlineItem(**item_data))
+                except ValidationError as ve:
+                    logger.error(
+                        "[%s] Validation failed for outline item #%d: %s. Data: %s",
+                        request_id,
+                        item_idx,
+                        ve,
+                        item_data,
+                    )
+                    raise PipelineError(
+                        f"Invalid structure for outline item #{item_idx}: {ve}"
+                    )
+
             logger.info(
-                "[%s] Successfully generated outline with %d sections",
+                "[%s] Successfully generated and validated outline with %d sections",
                 request_id,
-                len(data),
+                len(validated_outline),
             )
-            return data
+            return validated_outline
         # Catch specific errors from the helper or validation
         except (LLMError, JSONParsingError, PipelineError) as e:
             logger.error(

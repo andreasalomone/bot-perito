@@ -4,6 +4,8 @@ import json
 import logging
 from typing import AsyncGenerator, List
 
+# Import custom exceptions
+from app.core.exceptions import PipelineError
 from app.services.harmonization_service import HarmonizationService
 
 # Assuming LLMError might still be caught in run, if not, remove.
@@ -24,14 +26,6 @@ logger = logging.getLogger(__name__)
 # PROMPT_DIR = ...
 # loader = ...
 # env = ...
-
-
-class PipelineError(Exception):
-    """Base exception for pipeline-related errors (Defined centrally here)"""
-
-
-class ConfigurationError(PipelineError):
-    """Exception for configuration-related errors (e.g., missing templates)"""
 
 
 class PipelineService:
@@ -56,7 +50,7 @@ class PipelineService:
         corpus: str,
         imgs: List[str],  # Keep imgs param even if not used in current steps
         notes: str,
-        extra_styles: str,
+        reference_style_text: str,
     ) -> AsyncGenerator[str, None]:
         logger.info(
             "[%s] Starting pipeline run with corpus length %d", request_id, len(corpus)
@@ -66,16 +60,15 @@ class PipelineService:
                 {"type": "status", "message": "Initializing report generation..."}
             )
 
-            # Input validation (Keep TODO or implement proper validation service call)
-            # TODO: Replace these basic checks with a call to a dedicated InputValidationService
-            #       or integrate with ClarificationService if its scope changes.
+            # --- Input Validation ---
             if not template_excerpt:
                 raise PipelineError(
                     "Input validation failed: Template excerpt is missing."
                 )
             if not corpus:
                 raise PipelineError("Input validation failed: Corpus is missing.")
-            # Add checks for other critical inputs as needed
+            # NOTE: 'imgs' is currently unused by the core pipeline steps (outline, expand, harmonize)
+            # but is kept for potential future use or compatibility with callers.
 
             yield json.dumps(
                 {"type": "status", "message": "Generating report outline..."}
@@ -93,7 +86,6 @@ class PipelineService:
 
             # Context dictionary preparation is still useful here
             # for passing necessary data between steps if needed, but primarily for expansion
-            current_extra_styles = extra_styles  # Reuse variable name for clarity
 
             yield json.dumps(
                 {"type": "status", "message": "Expanding report sections..."}
@@ -114,7 +106,7 @@ class PipelineService:
                     corpus,  # Pass corpus directly
                     template_excerpt,  # Pass template_excerpt directly
                     notes,  # Pass notes directly
-                    current_extra_styles,  # Pass styles directly
+                    reference_style_text,  # Pass styles directly
                 )
                 sections[sec_outline_item["section"]] = text
                 yield json.dumps(
@@ -129,7 +121,7 @@ class PipelineService:
             )
             # 4. Armonizza - Use HarmonizationService
             harmonized_sections_dict = await self.harmonization_service.harmonize(
-                request_id, sections, extra_styles
+                request_id, sections, reference_style_text
             )
             yield json.dumps(
                 {"type": "status", "message": "Content harmonization complete."}
@@ -172,6 +164,3 @@ class PipelineService:
         finally:
             # Ensure the 'finished' event is always sent
             logger.info("[%s] Pipeline processing finished.", request_id)
-            yield json.dumps(
-                {"type": "finished", "message": "Pipeline processing complete."}
-            )

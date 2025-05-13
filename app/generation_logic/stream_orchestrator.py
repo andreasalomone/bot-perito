@@ -6,22 +6,17 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from app.core.config import settings
+from app.core.exceptions import ConfigurationError, PipelineError
 from app.generation_logic.context_preparation import (
     _extract_base_context,
     _load_template_excerpt,
 )
 from app.generation_logic.file_processing import _validate_and_extract_files
 from app.services.clarification_service import ClarificationService
-from app.services.doc_builder import (  # For completeness in error handling
-    DocBuilderError,
-)
-from app.services.extractor import ExtractorError  # Added ExtractorError
+from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError, LLMError
-from app.services.pipeline import (  # Added ConfigurationError
-    ConfigurationError,
-    PipelineError,
-    PipelineService,
-)
+from app.services.pipeline import PipelineService
+from app.services.style_loader import load_style_samples
 
 __all__ = [
     "_create_stream_event",
@@ -82,6 +77,12 @@ async def _stream_report_generation_logic(
         template_path_str = str(settings.template_path)
 
         # ------------------------------------------------------------------
+        # 0. Load styles early (for consistency)
+        # ------------------------------------------------------------------
+        reference_style_text = load_style_samples()
+        yield _create_stream_event("status", message="Stylistic references loaded.")
+
+        # ------------------------------------------------------------------
         # 1. Validate & extract content
         # ------------------------------------------------------------------
         yield _create_stream_event(
@@ -107,7 +108,12 @@ async def _stream_report_generation_logic(
             "status", message="Extracting base document context (LLM)…"
         )
         base_ctx = await _extract_base_context(
-            template_excerpt, corpus, img_tokens, notes, request_id
+            template_excerpt,
+            corpus,
+            img_tokens,
+            notes,
+            request_id,
+            reference_style_text,
         )
         yield _create_stream_event("status", message="Base document context extracted.")
 
@@ -129,6 +135,8 @@ async def _stream_report_generation_logic(
                 "original_corpus": corpus,
                 "image_tokens": img_tokens,
                 "notes": original_notes,
+                "template_excerpt": template_excerpt,
+                "reference_style_text": reference_style_text,
                 "initial_llm_base_fields": base_ctx,
             }
             yield _create_stream_event(
@@ -153,7 +161,7 @@ async def _stream_report_generation_logic(
             corpus=corpus,
             imgs=img_tokens,
             notes=notes,
-            extra_styles="",
+            reference_style_text=reference_style_text,
         ):
             try:
                 update_data = json.loads(pipeline_update_json_str)
@@ -207,6 +215,10 @@ async def _stream_report_generation_logic(
             payload=final_ctx,
         )
 
+        # Send a 'finished' event to properly close the stream
+        # This helps the frontend know the stream has ended successfully
+        yield _create_stream_event("finished", message="Stream completed successfully.")
+
     # ----------------------------------------------------------------------
     # Error handling
     # ----------------------------------------------------------------------
@@ -248,16 +260,6 @@ async def _stream_report_generation_logic(
             exc_info=False,
         )
         yield _create_stream_event("error", message=f"Data parsing error: {str(jpe)}")
-    except DocBuilderError as dbe:  # Specific DocBuilder errors
-        logger.error(
-            "[%s] DocBuilderError during stream: %s",
-            request_id,
-            str(dbe),
-            exc_info=False,
-        )
-        yield _create_stream_event(
-            "error", message=f"Document generation error: {str(dbe)}"
-        )
     except Exception as e:  # General catch-all MUST be last
         logger.exception(
             "[%s] Unexpected error during report generation stream: %s",

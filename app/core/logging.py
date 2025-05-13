@@ -1,7 +1,8 @@
 from logging.config import dictConfig
 
 
-def setup_logging():
+def setup_logging() -> None:
+    """Configures application-wide logging using dictConfig."""
     config = {
         "version": 1,
         "formatters": {

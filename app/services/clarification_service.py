@@ -17,14 +17,12 @@ class ClarificationService:
         Returns:
             A list of dictionaries, each containing the key, label, and question for a missing field.
         """
-        missing_fields: List[Dict[str, str]] = []
-        for key, config_item in critical_fields_config.items():
-            if llm_response.get(key) is None:
-                missing_fields.append(
-                    {
-                        "key": key,
-                        "label": config_item["label"],
-                        "question": config_item["question"],
-                    }
-                )
-        return missing_fields
+        return [
+            {
+                "key": key,
+                "label": config_item["label"],
+                "question": config_item["question"],
+            }
+            for key, config_item in critical_fields_config.items()
+            if llm_response.get(key) is None
+        ]

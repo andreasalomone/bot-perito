@@ -5,13 +5,12 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.core.config import settings
-from app.generation_logic.context_preparation import _load_template_excerpt
-from app.models.report_models import ClarificationPayload
+from app.core.exceptions import ConfigurationError, PipelineError
+from app.models.report_models import ClarificationPayload, ReportContext
 from app.services.doc_builder import DocBuilderError
 from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError, LLMError
-from app.services.pipeline import ConfigurationError, PipelineError, PipelineService
+from app.services.pipeline import PipelineService
 
 __all__ = ["build_report_with_clarifications"]
 
@@ -21,9 +20,9 @@ logger = logging.getLogger(__name__)
 async def build_report_with_clarifications(
     payload: ClarificationPayload,
     request_id: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> ReportContext:
     """Process user clarifications and run the generation pipeline, returning
-    the final merged context *before* DOCX generation.
+    the final merged context as a ReportContext object *before* DOCX generation.
 
     This function encapsulates the business logic previously embedded in the
     `/generate-with-clarifications` endpoint so the router can remain lean.
@@ -38,49 +37,63 @@ async def build_report_with_clarifications(
         # ---------------------------------------------------------------
         user_clarifications = payload.clarifications
         artifacts = payload.request_artifacts
+        template_excerpt = artifacts.template_excerpt
+        reference_style_text = artifacts.reference_style_text
 
-        base_ctx: Dict[str, Any] = artifacts.initial_llm_base_fields.model_dump(
-            exclude_none=True
-        )
+        # Start with the base fields from the initial LLM call (already a ReportContext)
+        # Use model_dump to get a dict for manipulation, then reload into a new model instance
+        base_ctx_dict: Dict[str, Any] = artifacts.initial_llm_base_fields.model_dump()
 
         for key, value in user_clarifications.items():
             if value is not None and value.strip() != "":
-                base_ctx[key] = value
-            elif key in base_ctx and (value is None or value.strip() == ""):
-                base_ctx[key] = ""
+                base_ctx_dict[key] = value
+            elif key in base_ctx_dict and (value is None or value.strip() == ""):
+                # If user provided an empty clarification for an existing field, keep it empty
+                # Note: Pydantic might treat empty strings differently from None depending on field type
+                base_ctx_dict[key] = (
+                    ""  # Or potentially None, depending on desired outcome
+                )
+
+        # Reload into a ReportContext to ensure structure before pipeline, though pipeline consumes dict parts
+        # This intermediate model isn't strictly necessary if pipeline output merges correctly,
+        # but maintains consistency.
+        # current_context_model_pre_pipeline = ReportContext(**base_ctx_dict)
 
         # ---------------------------------------------------------------
         # 2. Prepare inputs for the heavy pipeline
         # ---------------------------------------------------------------
-        template_path_str = str(settings.template_path)
-        try:
-            template_excerpt = await _load_template_excerpt(
-                template_path_str, request_id
-            )
-        except HTTPException as e:
-            logger.error(
-                "[%s] Failed to load template excerpt during clarification flow: %s",
-                request_id,
-                e.detail,
-            )
-            raise
+        # template_path_str = str(settings.template_path) # No longer needed directly here
+        # try: # No longer needed
+        #     template_excerpt = await _load_template_excerpt( # No longer needed
+        #         template_path_str, request_id # No longer needed
+        #     ) # No longer needed
+        # except HTTPException as e: # No longer needed
+        #     logger.error( # No longer needed
+        #         "[%s] Failed to load template excerpt during clarification flow: %s", # No longer needed
+        #         request_id, # No longer needed
+        #         e.detail, # No longer needed
+        #     ) # No longer needed
+        #     raise # No longer needed
 
         # Run the pipeline service directly
         pipeline = PipelineService()
         section_map: Dict[str, Any] | None = None
 
+        # Pipeline expects certain inputs (corpus, imgs, etc.) - get them from artifacts
         async for update_json_str in pipeline.run(
             request_id=request_id,
             template_excerpt=template_excerpt,
             corpus=artifacts.original_corpus,
             imgs=artifacts.image_tokens,
             notes=artifacts.notes,
-            extra_styles="",
+            reference_style_text=reference_style_text,
         ):
             try:
                 update_data = json.loads(update_json_str)
                 if update_data.get("type") == "data" and "payload" in update_data:
-                    section_map = update_data["payload"]
+                    section_map = update_data[
+                        "payload"
+                    ]  # Pipeline returns section dict
                     logger.info(
                         "[%s] Pipeline completed successfully in clarification flow.",
                         request_id,
@@ -115,14 +128,32 @@ async def build_report_with_clarifications(
                 "Pipeline did not return the expected section map during clarification flow."
             )
 
-        final_ctx = {**base_ctx, **section_map}
-        logger.debug(
-            "[%s] Final context created after clarification: %s",
-            request_id,
-            json.dumps(final_ctx, ensure_ascii=False)[:500] + "…",
-        )
+        # Merge the results: start with the updated base context dict, add pipeline sections
+        final_ctx_dict = {**base_ctx_dict, **section_map}
 
-        return final_ctx
+        # Validate and return as ReportContext object
+        try:
+            final_report_context = ReportContext(**final_ctx_dict)
+            logger.debug(
+                "[%s] Final ReportContext created after clarification: %s",
+                request_id,
+                final_report_context.model_dump_json(indent=2, exclude_none=True)[:500]
+                + "…",
+            )
+            return final_report_context
+        except Exception as validation_error:  # Catch Pydantic validation errors
+            logger.error(
+                "[%s] Failed to validate final merged context into ReportContext: %s. Data: %s",
+                request_id,
+                str(validation_error),
+                json.dumps(final_ctx_dict)[:500]
+                + "...",  # Log snippet of problematic data
+            )
+            # Raise a more specific internal error or re-use HTTPException
+            raise HTTPException(
+                status_code=500,
+                detail="Internal error: Failed to structure final report data after pipeline.",
+            )
 
     except HTTPException:
         raise

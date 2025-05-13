@@ -2,7 +2,6 @@ import base64
 import io
 import logging
 from typing import BinaryIO, Tuple
-from uuid import uuid4
 
 import pdfplumber
 from docx import Document
@@ -49,9 +48,8 @@ def _docx_to_text(f: BinaryIO) -> str:
         raise ExtractorError("Failed to extract text from DOCX") from e
 
 
-def _image_handler(fname: str, f: BinaryIO) -> Tuple[str, str]:
+def _image_handler(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
     """Return (text, img_token). img_token is base64 if vision enabled."""
-    request_id = str(uuid4())
     logger.info("[%s] Processing image file: %s", request_id, fname)
 
     try:
@@ -69,9 +67,13 @@ def _image_handler(fname: str, f: BinaryIO) -> Tuple[str, str]:
         try:
             f.seek(0)
             img = Image.open(f).convert("RGB")
-            img.thumbnail((512, 512))  # keep prompt small
+            img.thumbnail(
+                (settings.image_thumbnail_width, settings.image_thumbnail_height)
+            )  # Use settings
             buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=70)
+            img.save(
+                buf, format="JPEG", quality=settings.image_jpeg_quality
+            )  # Use settings
             buf.seek(0)
             b64 = base64.b64encode(buf.read()).decode()
             token = f"data:image/jpeg;base64,{b64}"
@@ -90,20 +92,23 @@ def _image_handler(fname: str, f: BinaryIO) -> Tuple[str, str]:
         raise ExtractorError(f"Failed to handle image file: {fname}") from e
 
 
-def extract_damage_image(f: BinaryIO) -> Tuple[str, str]:
+def extract_damage_image(f: BinaryIO, request_id: str) -> Tuple[str, str]:
     """
     Always return ("", base64_token) so the vision model
     receives every damage photo even if OCR finds text.
     """
-    request_id = str(uuid4())
     logger.info("[%s] Processing damage image", request_id)
 
     try:
         f.seek(0)
         img = Image.open(f).convert("RGB")
-        img.thumbnail((512, 512))
+        img.thumbnail(
+            (settings.image_thumbnail_width, settings.image_thumbnail_height)
+        )  # Use settings
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=70)
+        img.save(
+            buf, format="JPEG", quality=settings.image_jpeg_quality
+        )  # Use settings
         token = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
         logger.debug(
             "[%s] Generated base64 token for damage image, length: %d",
@@ -125,9 +130,8 @@ _HANDLERS = {
 }
 
 
-def extract(fname: str, f: BinaryIO) -> Tuple[str, str]:
+def extract(fname: str, f: BinaryIO, request_id: str) -> Tuple[str, str]:
     """Extract text and/or image token from a file based on its extension."""
-    request_id = str(uuid4())
     ext = fname.lower().split(".")[-1]
     logger.info(
         "[%s] Extracting content from file: %s (type: %s)", request_id, fname, ext
@@ -145,16 +149,18 @@ def extract(fname: str, f: BinaryIO) -> Tuple[str, str]:
             return text, ""
 
         if ext in {"png", "jpg", "jpeg"}:
-            text, token = _image_handler(fname, f)
+            text, token = _image_handler(fname, f, request_id)
             logger.info("[%s] Successfully processed image file: %s", request_id, fname)
             return text, token
 
         # Fallback for unknown types
-        text = f.read().decode(errors="ignore")
         logger.warning(
-            "[%s] Unknown file type %s, using raw text decode", request_id, ext
+            "[%s] Unknown file type '%s' for file '%s'. This type is not explicitly handled.",
+            request_id,
+            ext,
+            fname,
         )
-        return text, ""
+        raise ExtractorError(f"Unsupported file type: '{ext}' for file '{fname}'")
 
     except ExtractorError:
         raise
@@ -163,9 +169,8 @@ def extract(fname: str, f: BinaryIO) -> Tuple[str, str]:
         raise ExtractorError(f"Failed to process file: {fname}") from e
 
 
-def guard_corpus(corpus: str) -> str:
+def guard_corpus(corpus: str, request_id: str) -> str:
     """Ensure corpus doesn't exceed maximum length."""
-    request_id = str(uuid4())
     original_len = len(corpus)
 
     if original_len > settings.max_prompt_chars:

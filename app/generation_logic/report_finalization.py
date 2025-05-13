@@ -1,11 +1,12 @@
-import json
+"""Handles the final generation and streaming of the DOCX report document."""
+
 import logging
-from typing import Any, Dict
 
 from fastapi.responses import StreamingResponse
 
+from app.core.exceptions import PipelineError
+from app.models.report_models import ReportContext  # Import ReportContext
 from app.services.doc_builder import DocBuilderError, inject
-from app.services.pipeline import PipelineError
 
 __all__ = [
     "_generate_and_stream_docx",
@@ -24,14 +25,14 @@ DOCX_MEDIA_TYPE = (
 
 async def _generate_and_stream_docx(
     template_path: str,
-    final_context: Dict[str, Any],
+    final_context: ReportContext,  # Changed type hint to ReportContext
     request_id: str,
 ) -> StreamingResponse:
-    """Inject the *final_context* JSON into the Word template and stream it back to
+    """Inject the *final_context* ReportContext object into the Word template and stream it back to
     the client as an attachment."""
     try:
-        json_payload = json.dumps(final_context, ensure_ascii=False)
-        docx_bytes = inject(str(template_path), json_payload)
+        # Pass the final_context ReportContext object directly to inject
+        docx_bytes = inject(str(template_path), final_context)
         logger.info("[%s] Successfully generated DOCX report", request_id)
         return StreamingResponse(
             iter([docx_bytes]),

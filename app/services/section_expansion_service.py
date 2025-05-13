@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
 
+from app.core.exceptions import PipelineError  # Import from core exceptions
+from app.models.report_models import OutlineItem  # Import OutlineItem
 from app.services.llm import JSONParsingError, LLMError, execute_llm_step_with_template
 
 # Define PipelineError or import from a central location
-from app.services.pipeline import PipelineError  # Example import
+# from app.services.pipeline import PipelineError  # Example import
 
 # class PipelineError(Exception):
 #     """Base exception for pipeline-related errors (defined here for example)"""
@@ -15,21 +16,23 @@ logger = logging.getLogger(__name__)
 
 
 class SectionExpansionService:
+    """Service responsible for expanding individual report section outlines into full textual content using an LLM."""
+
     async def expand_section(
         self,
         request_id: str,
-        section: Dict[str, Any],
+        section: OutlineItem,  # Changed to OutlineItem
         corpus: str,
         template_excerpt: str,
         notes: str,
-        current_extra_styles: str,
+        reference_style_text: str,
     ) -> str:
         """
         Expands a single section outline item into detailed content.
         """
-        sec_key = section["section"]
-        title = section["title"]
-        bullets = section["bullets"]
+        sec_key = section.section  # Use attribute access
+        title = section.title  # Use attribute access
+        bullets = section.bullets  # Use attribute access
 
         logger.info(
             "[%s] Expanding section '%s' with %d bullets",
@@ -45,18 +48,22 @@ class SectionExpansionService:
                 "quantificazione": "Dettaglia costi totali del danno come lista puntata o tabella testo.",
                 "commento": "Fornisci una sintesi tecnica finale e le raccomandazioni.",
             }
+            # Ensure section_question defaults gracefully if sec_key is not found, or provide a generic question.
+            # For now, joining an empty string is acceptable if not found, leading to an empty question.
             section_question = " e ".join(section_questions.get(sec_key, ""))
 
             # Prepare context for the helper method
             llm_context = {
                 "title": title,
                 "sec_key": sec_key,
-                "bullets": str(bullets),
+                "bullets": str(
+                    bullets
+                ),  # bullets is List[str], ensure it's passed as a string if template expects that
                 "section_question": section_question,
                 "corpus": corpus,
                 "template_excerpt": template_excerpt,
                 "notes": notes,
-                "current_extra_styles": current_extra_styles,
+                "reference_style_text": reference_style_text,
             }
 
             # Use the helper function from llm module

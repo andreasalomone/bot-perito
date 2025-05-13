@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Dict
 
+from app.core.exceptions import PipelineError  # Import from core exceptions
 from app.services.llm import JSONParsingError, LLMError, execute_llm_step_with_template
 
 # Define PipelineError or import from a central location
-from app.services.pipeline import PipelineError  # Example import
+# from app.services.pipeline import PipelineError  # Example import
 
 # class PipelineError(Exception):
 #     """Base exception for pipeline-related errors (defined here for example)"""
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class HarmonizationService:
     async def harmonize(
-        self, request_id: str, sections: Dict[str, str], extra_styles: str
+        self, request_id: str, sections: Dict[str, str], reference_style_text: str
     ) -> Dict[str, str]:
         """
         Harmonizes the style and tone across multiple report sections.
@@ -36,7 +37,7 @@ class HarmonizationService:
             # Prepare context for the helper method - pass sections directly
             llm_context = {
                 "sections_dict": sections,  # Pass the dictionary directly
-                "extra_styles_example": extra_styles,
+                "reference_style_text": reference_style_text,
             }
 
             # Use the helper function from llm module

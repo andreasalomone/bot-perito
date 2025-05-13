@@ -5,6 +5,7 @@ from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
 
 from app.core.config import settings
+from app.core.exceptions import ConfigurationError, PipelineError
 from app.services.llm import (
     JSONParsingError,
     LLMError,
@@ -12,7 +13,6 @@ from app.services.llm import (
     call_llm,
     extract_json,
 )
-from app.services.pipeline import ConfigurationError, PipelineError
 
 __all__ = [
     "_load_template_excerpt",
@@ -44,7 +44,7 @@ async def _load_template_excerpt(template_path: str, request_id: str) -> str:
             "[%s] Failed to load template for excerpt: %s",
             request_id,
             str(e),
-            exc_info=False,
+            exc_info=True,
         )
         raise ConfigurationError("Unexpected error loading template excerpt.") from e
 
@@ -55,11 +55,14 @@ async def _extract_base_context(
     imgs: List[str],
     notes: str,
     request_id: str,
+    reference_style_text: str,
 ) -> Dict[str, Any]:
     """Build the prompt and call the language model to obtain the *base* JSON context
     of the report (generic fields before the heavy pipeline)."""
     try:
-        base_prompt = build_prompt(template_excerpt, corpus, imgs, notes)
+        base_prompt = build_prompt(
+            template_excerpt, corpus, imgs, notes, reference_style_text
+        )
         if len(base_prompt) > settings.max_total_prompt_chars:
             logger.warning(
                 "[%s] Prompt too large: %d chars", request_id, len(base_prompt)

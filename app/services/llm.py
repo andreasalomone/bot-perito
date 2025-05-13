@@ -10,12 +10,9 @@ from openai import AsyncOpenAI, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-from app.services.style_loader import load_style_samples
 
 # Configure module logger
 logger = logging.getLogger(__name__)
-
-BULLET = "•"  # match bullet used in samples
 
 
 # Custom exceptions for better error handling
@@ -75,10 +72,6 @@ async def call_llm(prompt: str) -> str:
         rsp = await client.chat.completions.create(
             model=settings.model_id,
             messages=[
-                {
-                    "role": "system",
-                    "content": "Rispondi SOLO con un JSON valido e nient'altro.",
-                },
                 {"role": "user", "content": prompt},
             ],
         )
@@ -222,6 +215,7 @@ def build_prompt(
     corpus: str,
     images: list[str],
     notes: str,
+    reference_style_text: str,
 ) -> str:
     """
     Prompt per LLama4: restituisce SOLO un JSON con i campi del template.
@@ -236,12 +230,11 @@ def build_prompt(
         )
 
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------
-    extra_styles_content = load_style_samples()
     extra_styles = ""
-    if extra_styles_content:
+    if reference_style_text:
         extra_styles = (
             "\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n"
-            f"{extra_styles_content}\\n>>>"
+            f"{reference_style_text}\\n>>>"
         )
 
     # --- eventuali immagini -------------------------------------------------

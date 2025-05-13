@@ -11,11 +11,11 @@
 </head>
 
 <body>
-  <div class="container">
+  <main class="container">
     <h2>Robot Salomone: Generatore di Perizie</h2>
     <form id="frm">
       <!-- API Key field -->
-      <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
+      <label for="api_key" class="form-label">
         API Key
       </label>
       <input
@@ -25,36 +25,36 @@
         required
       >
       <div class="file-input-wrapper">
-        <label style="display:block; margin:1rem 0 .25rem; color:var(--text-muted)">
+        <label for="file_input" class="form-label">
           Carica i documenti per il report
         </label>
-        <input type="file" name="files" multiple required class="file-input" accept="image/*,.pdf,.doc,.docx"
-          aria-label="Carica i tuoi documenti">
+        <input type="file" id="file_input" name="files" multiple required class="file-input" accept="image/*,.pdf,.doc,.docx">
+        <small class="file-size-limit">Limite: max 25MB per file, 100MB totali. Formati supportati: PDF, DOCX, JPG, PNG.</small>
       </div>
 
       <div class="textarea-wrapper">
-        <textarea name="notes" rows="4" placeholder="Inserisci qui eventuali note o dettagli aggiuntivi..."
-          aria-label="Note aggiuntive"></textarea>
+        <label for="notes_input" class="form-label">Note aggiuntive</label>
+        <textarea id="notes_input" name="notes" rows="4" placeholder="Inserisci qui eventuali note o dettagli aggiuntivi..."></textarea>
       </div>
       <button type="submit">
         <span>Genera Report</span>
       </button>
     </form>
 
-    <div id="spin" style="display: none;">
-      <div class="spinner"></div>
+    <div id="spin" role="status" aria-live="polite">
+      <div class="spinner" role="status" aria-label="Caricamento in corso"></div>
       <p>Attendere prego, il Report AI è in fase di generazione...</p>
-      <p id="status-message" style="margin-top: 10px; font-size: 0.9em; color: #555;"></p>
+      <p id="status-message" aria-live="polite"></p>
     </div>
 
     <!-- Placeholder for Clarification UI -->
-    <div id="clarification-ui" style="display:none; margin-top: 20px; padding: 15px; border: 1px solid var(--border-color); border-radius: 0.75rem;">
+    <div id="clarification-ui">
       <!-- Content will be dynamically injected by script.js -->
     </div>
 
-  </div>
+  </main>
 
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 
 </html>

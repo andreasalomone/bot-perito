@@ -29,7 +29,17 @@ class ReportContext(BaseModel):
     accertamenti: Optional[str] = None
     quantificazione: Optional[str] = None
     commento: Optional[str] = None
-    allegati: Optional[List[str]] = None
+    allegati: Optional[List[str]] = (
+        None  # List of attachment filenames, e.g., ["file1.pdf", "image.png"]
+    )
+
+
+class OutlineItem(BaseModel):
+    """Represents a single item in the generated report outline."""
+
+    section: str
+    title: str
+    bullets: List[str]
 
 
 class RequestArtifacts(BaseModel):
@@ -38,6 +48,8 @@ class RequestArtifacts(BaseModel):
     original_corpus: str
     image_tokens: List[str]  # From the plan, this is what `imgs` corresponds to
     notes: str
+    template_excerpt: str
+    reference_style_text: str
     initial_llm_base_fields: (
         ReportContext  # This is the base_ctx from the first LLM call
     )
@@ -46,5 +58,5 @@ class RequestArtifacts(BaseModel):
 class ClarificationPayload(BaseModel):
     """Defines the structure for receiving user clarifications."""
 
-    clarifications: Dict[str, Optional[str]]  # Removed redundant comment
+    clarifications: Dict[str, Optional[str]]
     request_artifacts: RequestArtifacts
