@@ -1,6 +1,7 @@
 """Provides API key-based security for FastAPI endpoints."""
 
 import logging
+import secrets
 
 from fastapi import Depends
 from fastapi import HTTPException
@@ -38,6 +39,6 @@ async def verify_api_key(key: str = Depends(api_key_header)) -> bool:
         )
         # The check below will handle returning 403
 
-    if key != settings.api_key:
+    if not (settings.api_key and secrets.compare_digest(key, settings.api_key)):
         raise HTTPException(status_code=403, detail="Invalid API Key")
     return True

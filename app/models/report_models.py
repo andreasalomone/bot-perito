@@ -42,7 +42,6 @@ class RequestArtifacts(BaseModel):
     """Holds intermediate artifacts and context passed between report generation steps."""
 
     original_corpus: str
-    image_tokens: list[str]  # From the plan, this is what `imgs` corresponds to
     notes: str
     template_excerpt: str
     reference_style_text: str

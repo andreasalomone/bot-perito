@@ -11,6 +11,7 @@ from app.core.exceptions import PipelineError
 from app.generation_logic.context_preparation import _extract_base_context
 from app.generation_logic.context_preparation import _load_template_excerpt
 from app.generation_logic.file_processing import _validate_and_extract_files
+from app.models.report_models import ReportContext
 from app.services.clarification_service import ClarificationService
 from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError
@@ -86,12 +87,20 @@ def _helper_clarification_check(
     clarification_service = ClarificationService()
     missing_info_list = clarification_service.identify_missing_fields(base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION)
     if missing_info_list:
+        # Convert base_ctx (dict) to ReportContext instance
+        try:
+            initial_llm_base_fields_model = ReportContext(**base_ctx)
+        except Exception as e:  # Handle potential Pydantic validation error during conversion
+            logger.error(f"[{request_id}] Error converting base_ctx to ReportContext: {e}. Base_ctx: {base_ctx}")
+            # For robustness, let's allow fallback but log heavily.
+            initial_llm_base_fields_model = ReportContext(**base_ctx)
+
         request_artifacts_data: dict[str, Any] = {
             "original_corpus": corpus,
-            "notes": original_notes,
+            "notes": original_notes,  # Using original_notes, not notes (which might be modified)
             "template_excerpt": template_excerpt,
             "reference_style_text": reference_style_text,
-            "initial_llm_base_fields": base_ctx,
+            "initial_llm_base_fields": initial_llm_base_fields_model,  # Use the model instance
         }
         return missing_info_list, request_artifacts_data
     return None, None

@@ -30,9 +30,7 @@ class Settings(BaseSettings):
         cleanup_ttl: Time-to-live in seconds for temporary files before cleanup.
         max_prompt_chars: Maximum characters allowed for a corpus input before truncation.
         max_total_prompt_chars: Maximum characters allowed for a total assembled prompt.
-        reference_dir: Path to the directory containing reference style documents.
         template_path: Path to the main DOCX template file.
-        max_style_paragraphs: Maximum number of paragraphs to extract from style reference documents.
         max_images_in_report: Maximum number of images to include in the generated report.
         api_key: General API key for securing internal API endpoints.
         ocr_language: Language setting for OCR processing.
@@ -45,26 +43,23 @@ class Settings(BaseSettings):
         LLM_READ_TIMEOUT: LLM client read timeout in seconds.
     """
 
-    openrouter_api_key: str | None = Field(None, env="OPENROUTER_API_KEY")
-    model_id: str = Field("meta-llama/llama-4-maverick:free", env="MODEL_ID")
-    cleanup_ttl: int = Field(900, env="CLEANUP_TTL")
-    max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
-    max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
-    reference_dir: Path = Field(Path("app/templates/reference"), env="REFERENCE_DIR")
-    template_path: Path = Field(Path("app/templates/template.docx"), env="TEMPLATE_PATH")
-    max_style_paragraphs: int = Field(8, env="MAX_STYLE_PARAS")
-    max_images_in_report: int = Field(10, env="MAX_IMAGES_IN_REPORT")
+    openrouter_api_key: str | None = Field(default=None)
+    model_id: str = Field(default="meta-llama/llama-4-maverick:free")
+    cleanup_ttl: int = Field(default=900)
+    max_prompt_chars: int = Field(default=4_000_000)
+    max_total_prompt_chars: int = Field(default=4_000_000)
+    template_path: Path = Field(default=Path("app/templates/template.docx"))
+    max_images_in_report: int = Field(default=10)
 
-    api_key: str | None = Field(None, env="API_KEY")
+    api_key: str | None = Field(default=None)
 
-    ocr_language: str = Field("ita", env="OCR_LANGUAGE")
-    image_thumbnail_width: int = Field(512, env="IMAGE_THUMBNAIL_WIDTH")
-    image_thumbnail_height: int = Field(512, env="IMAGE_THUMBNAIL_HEIGHT")
-    image_jpeg_quality: int = Field(70, env="IMAGE_JPEG_QUALITY")
+    ocr_language: str = Field(default="ita")
+    image_thumbnail_width: int = Field(default=512)
+    image_thumbnail_height: int = Field(default=512)
+    image_jpeg_quality: int = Field(default=70)
 
     cors_allowed_origins: list[str] = Field(
-        default=list(DEFAULT_CORS_ORIGINS),  # Use a copy of the default list
-        env="CORS_ALLOWED_ORIGINS",
+        default_factory=lambda: list(DEFAULT_CORS_ORIGINS),  # Use a copy of the default list
     )
 
     CRITICAL_FIELDS_FOR_CLARIFICATION: dict[str, dict[str, str]] = Field(
@@ -96,10 +91,15 @@ class Settings(BaseSettings):
         }
     )
 
-    LLM_CONNECT_TIMEOUT: float = Field(10.0, description="LLM client connect timeout in seconds.")
-    LLM_READ_TIMEOUT: float = Field(180.0, description="LLM client read timeout in seconds.")
+    LLM_CONNECT_TIMEOUT: float = Field(default=10.0, description="LLM client connect timeout in seconds.")
+    LLM_READ_TIMEOUT: float = Field(default=180.0, description="LLM client read timeout in seconds.")
 
-    model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
+    model_config = {
+        "env_file": ".env",
+        "protected_namespaces": ("settings_",),
+        "env_prefix": "",  # No prefix for environment variables
+        "extra": "ignore",  # Ignore extra fields
+    }
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

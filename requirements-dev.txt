@@ -1,7 +1,6 @@
 aiofiles==24.1.0
 annotated-types==0.7.0
 anyio==4.9.0
-async_lru>=1.0.0
 backoff==2.2.1
 beautifulsoup4==4.13.4
 certifi==2025.4.26

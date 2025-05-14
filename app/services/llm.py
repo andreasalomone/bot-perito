@@ -32,6 +32,7 @@ class JSONParsingError(Exception):
 # --- Reusable Jinja2 Environment ---
 # Initialize Jinja2 environment for prompt templates
 PROMPT_DIR = pathlib.Path(__file__).parent.parent / "services/prompt_templates"  # Adjusted path
+env: jinja2.Environment | None = None
 try:
     loader = jinja2.FileSystemLoader(PROMPT_DIR)
     env = jinja2.Environment(loader=loader)
@@ -56,7 +57,7 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=settings.openrouter_api_key,
     default_headers={
-        "HTTP-Referer": "http://localhost",  # For Vercel, consider using the deployed domain or omitting if not required
+        "HTTP-Referer": "https://aiperito.vercel.app",
         "X-Title": "bot-perito",
         # Authorization is auto‑added from api_key
     },
