@@ -28,7 +28,6 @@ class Settings(BaseSettings):
         openrouter_api_key: API key for OpenRouter services.
         model_id: Identifier for the language model to be used.
         cleanup_ttl: Time-to-live in seconds for temporary files before cleanup.
-        allow_vision: Flag to enable or disable vision capabilities.
         max_prompt_chars: Maximum characters allowed for a corpus input before truncation.
         max_total_prompt_chars: Maximum characters allowed for a total assembled prompt.
         reference_dir: Path to the directory containing reference style documents.
@@ -47,7 +46,6 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = Field(None, env="OPENROUTER_API_KEY")
     model_id: str = Field("meta-llama/llama-4-maverick:free", env="MODEL_ID")
     cleanup_ttl: int = Field(900, env="CLEANUP_TTL")
-    allow_vision: bool = Field(True, env="ALLOW_VISION")
     max_prompt_chars: int = Field(4_000_000, env="MAX_PROMPT_CHARS")
     max_total_prompt_chars: int = Field(4_000_000, env="MAX_TOTAL_PROMPT_CHARS")
     reference_dir: Path = Field(Path("app/templates/reference"), env="REFERENCE_DIR")

@@ -8,6 +8,7 @@ from uuid import uuid4
 import jinja2
 from openai import AsyncOpenAI
 from openai import OpenAIError
+from tenacity import RetryCallState
 from tenacity import retry
 from tenacity import stop_after_attempt
 from tenacity import wait_exponential
@@ -55,12 +56,37 @@ client = AsyncOpenAI(
 
 
 # ---------------------------------------------------------------
+# Helper predicate for tenacity retry
+# ---------------------------------------------------------------
+
+
+def _should_retry_llm_call(retry_state: RetryCallState) -> bool:
+    """Determines if a retry should occur based on the exception in RetryCallState."""
+    if not retry_state.outcome:  # Should not happen if an exception occurred
+        return False
+
+    exc = retry_state.outcome.exception()
+    if not exc:
+        return False  # No exception, no need to retry
+
+    # Unwrap our custom LLMError to get to the original cause (e.g., OpenAIError)
+    actual_exception = exc.__cause__ if isinstance(exc, LLMError) and exc.__cause__ else exc
+
+    # Check for status or status_code on the actual underlying exception
+    status = getattr(actual_exception, "status", None) or getattr(actual_exception, "status_code", None)
+    if status in {429, 500, 502, 503, 504}:
+        logger.debug("Retryable API error status %s detected. Retrying...", status)
+        return True
+    return False
+
+
+# ---------------------------------------------------------------
 # LLM call wrapped in a thread so FastAPI remains async
 # ---------------------------------------------------------------
 @retry(
     wait=wait_exponential(multiplier=1, min=2, max=10),
     stop=stop_after_attempt(3),
-    retry=lambda exc: isinstance(exc, OpenAIError) and getattr(exc, "status", None) in {429, 500, 502, 503, 504},
+    retry=_should_retry_llm_call,
 )
 async def call_llm(prompt: str) -> str:
     request_id = str(uuid4())
@@ -77,6 +103,8 @@ async def call_llm(prompt: str) -> str:
         logger.debug("[%s] LLM response received, length: %d chars", request_id, len(content))
         return content
     except OpenAIError as e:
+        # Let the retry decorator decide whether to retry. We wrap in LLMError only
+        # *after* all retry attempts are exhausted (tenacity will surface the exception here).
         logger.error("[%s] OpenAI API error: %s", request_id, str(e), exc_info=True)
         raise LLMError(f"OpenAI API error: {str(e)}") from e
     except Exception as e:
@@ -195,7 +223,6 @@ async def execute_llm_step_with_template(
 def build_prompt(
     template_excerpt: str,
     corpus: str,
-    images: list[str],
     notes: str,
     reference_style_text: str,
 ) -> str:
@@ -216,9 +243,9 @@ def build_prompt(
         )
 
     # --- eventuali immagini -------------------------------------------------
-    img_block = ""
-    if images and settings.allow_vision:
-        img_block = "\\n\\nFOTO_DANNI_BASE64:\\n" + "\\n".join(images)
+    # img_block = ""
+    # if images and settings.allow_vision:
+    #    img_block = "\\n\\nFOTO_DANNI_BASE64:\\n" + "\\n".join(images)
 
     # --- carica e renderizza template Jinja2 ----------------------------------
     try:
@@ -228,7 +255,6 @@ def build_prompt(
             extra_styles=extra_styles,
             corpus=corpus,
             notes=notes,
-            img_block=img_block,
         )
         return prompt_content
     except jinja2.TemplateNotFound:

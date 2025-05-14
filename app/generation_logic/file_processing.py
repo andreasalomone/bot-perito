@@ -2,9 +2,7 @@
 
 This module provides the core functionality to:
 - Validate uploaded files against size, type, and extension constraints.
-- Extract textual content from various file formats (PDF, DOCX).
-- Process images to extract text via OCR or generate image tokens (e.g., base64 representations)
-  for vision-enabled language models.
+- Extract textual content from various file formats (PDF, DOCX) and images via OCR.
 
 It orchestrates these tasks concurrently for multiple files to improve efficiency.
 The primary entry point is `_validate_and_extract_files` which is used by the
@@ -21,7 +19,6 @@ import magic
 from fastapi import HTTPException
 from fastapi import UploadFile
 
-from app.core.config import settings
 from app.core.exceptions import PipelineError
 from app.core.validation import ALLOWED_EXTENSIONS
 from app.core.validation import MAX_FILE_SIZE
@@ -43,8 +40,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _extract_single_file(filename: str, request_id: str, file_content_bytes: bytes) -> tuple[str | None, str | None]:
-    """Extract plain text and (optionally) an image token from file contents.
+async def _extract_single_file(filename: str, request_id: str, file_content_bytes: bytes) -> str | None:
+    """Extract plain text from file contents.
 
     Parameters
     ----------
@@ -57,23 +54,21 @@ async def _extract_single_file(filename: str, request_id: str, file_content_byte
 
     Returns:
     -------
-    Tuple[Optional[str], Optional[str]]
-        A 2-tuple where the first element is the extracted text (or ``None``) and the
-        second element is an image token (or ``None``).
+    Optional[str]
+        The extracted text (or ``None``).
     """
     try:
         # Use io.BytesIO to treat the byte content as a file-like object
         with io.BytesIO(file_content_bytes) as file_stream:
-            txt, tok = extract(filename, file_stream, request_id)
+            txt, _ = extract(filename, file_stream, request_id)
 
         logger.debug(
-            "[%s] Extracted from %s: text=%d chars, has_image=%s",
+            "[%s] Extracted from %s: text=%d chars",
             request_id,
             filename,
             len(txt) if txt else 0,
-            bool(tok),
         )
-        return txt, tok
+        return txt
     except ExtractorError as e:
         logger.error(
             "[%s] Extraction error from %s: %s",
@@ -102,11 +97,20 @@ async def _extract_single_file(filename: str, request_id: str, file_content_byte
 async def _validate_and_extract_files(
     files: list[UploadFile],
     request_id: str,
-) -> tuple[str, list[str]]:
-    """Validate uploads (size, type, total size), then extract text corpus and image tokens concurrently."""
-    max_images_in_report = getattr(settings, "max_images_in_report", 10)
+) -> str:
+    """Validate uploads (size, type, total size), then extract text corpus concurrently."""
     total_size = 0
     validated_files_data: list[tuple[str, bytes]] = []  # To store (filename, content_bytes)
+
+    # --- Pre-flight: max file count check ---
+    from app.core.validation import MAX_FILES  # Local import to avoid circulars during tests
+
+    if len(files) > MAX_FILES:
+        logger.warning("[%s] Upload rejected: too many files (%d > %d)", request_id, len(files), MAX_FILES)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Puoi caricare al massimo {MAX_FILES} file alla volta.",
+        )
 
     # --- Validation Loop ---
     for f_obj in files:
@@ -127,30 +131,39 @@ async def _validate_and_extract_files(
             )
 
         # 2. Read Content ONCE for validation checks
+        logger.debug(
+            "[%s] Attempting to read %s (type=%s, closed=%s)",
+            request_id,
+            filename,
+            type(f_obj.file),
+            getattr(f_obj.file, "closed", "?"),
+        )
+
         try:
-            # Ensure file pointer is at the beginning before reading
-            if hasattr(f_obj, "seek") and asyncio.iscoroutinefunction(f_obj.seek):
-                await f_obj.seek(0)
-            elif hasattr(f_obj.file, "seek"):
-                f_obj.file.seek(0)  # For regular file objects wrapped by UploadFile
-            else:
-                logger.warning(
-                    "[%s] File object %s may not support seek for validation read.",
-                    request_id,
-                    filename,
-                )
             contents = await f_obj.read()
-        except Exception as read_err:
-            logger.error(
-                "[%s] Failed to read file content for validation: %s - %s",
+        except Exception as async_read_err:
+            # Fallback – try synchronous read from underlying file object
+            logger.warning(
+                "[%s] Async read failed for %s, trying fallback: %s",
                 request_id,
                 filename,
-                str(read_err),
+                str(async_read_err),
             )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Errore durante la lettura del file per validazione: {filename}",
-            ) from read_err
+            try:
+                if hasattr(f_obj.file, "seek"):
+                    f_obj.file.seek(0)
+                contents = f_obj.file.read()
+            except Exception as sync_read_err:
+                logger.error(
+                    "[%s] Fallback read failed for %s: %s",
+                    request_id,
+                    filename,
+                    str(sync_read_err),
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Impossibile leggere '{filename}': {sync_read_err}",
+                ) from sync_read_err
 
         size = len(contents)
 
@@ -249,25 +262,20 @@ async def _validate_and_extract_files(
 
     # --- Concurrent Extraction ---
     texts_content: list[str] = []
-    general_img_tokens: list[str] = []
 
     if not validated_files_data:  # If no files were validated (e.g. empty initial list)
         logger.info("[%s] No files to extract.", request_id)
-        return "", []
+        return ""
 
     tasks = [_extract_single_file(fname, request_id, f_content_bytes) for fname, f_content_bytes in validated_files_data]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for result_idx, result_item in enumerate(results):
-        # Get original filename for context in case of error from validated_files_data
-        original_filename = validated_files_data[result_idx][0]
-
+    for result_item in results:
         if isinstance(result_item, Exception):
             # _extract_single_file raises ExtractorError or PipelineError
             logger.error(
-                "[%s] Error during concurrent extraction for file %s: %s",
+                "[%s] Error during concurrent extraction for file: %s",
                 request_id,
-                original_filename,
                 str(result_item),
                 exc_info=(
                     True
@@ -280,26 +288,20 @@ async def _validate_and_extract_files(
             if isinstance(result_item, ExtractorError | PipelineError):
                 # If it's already one of our specific errors, re-raise with context
                 # The original error message in result_item should be descriptive enough
-                raise PipelineError(f"Error processing file '{original_filename}': {str(result_item)}") from result_item
+                raise PipelineError(f"Error processing file: {str(result_item)}") from result_item
             else:  # For truly unexpected exceptions from gather or the task itself
-                raise PipelineError(
-                    f"Unexpected error processing file '{original_filename}': {str(result_item)}"
-                ) from result_item
+                raise PipelineError(f"Unexpected error processing file: {str(result_item)}") from result_item
         else:
             assert not isinstance(result_item, Exception)  # Help Mypy with type narrowing
-            txt, tok = cast(tuple[str | None, str | None], result_item)  # result_item is Tuple[Optional[str], Optional[str]]
+            txt = cast(str | None, result_item)  # result_item is Optional[str]
             if txt is not None:  # Ensure not None, could also check for non-empty string if needed
                 texts_content.append(txt)
-            if tok is not None:  # Ensure not None
-                general_img_tokens.append(tok)
 
-    final_img_tokens: list[str] = list(general_img_tokens)[:max_images_in_report]
     corpus = guard_corpus("\\n\\n".join(texts_content), request_id)
 
     logger.info(
-        "[%s] Validation & Extraction complete. Corpus length: %d. Image tokens: %d.",
+        "[%s] Validation & Extraction complete. Corpus length: %d.",
         request_id,
         len(corpus),
-        len(final_img_tokens),
     )
-    return corpus, final_img_tokens
+    return corpus

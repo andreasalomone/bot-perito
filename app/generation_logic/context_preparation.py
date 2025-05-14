@@ -55,7 +55,7 @@ async def _extract_base_context(
     of the report (generic fields before the heavy pipeline).
     """
     try:
-        base_prompt = build_prompt(template_excerpt, corpus, imgs, notes, reference_style_text)
+        base_prompt = build_prompt(template_excerpt, corpus, notes, reference_style_text)
         if len(base_prompt) > settings.max_total_prompt_chars:
             logger.warning("[%s] Prompt too large: %d chars", request_id, len(base_prompt))
             raise PipelineError("Prompt too large or too many attachments")

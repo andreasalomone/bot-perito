@@ -86,10 +86,11 @@ async def _stream_report_generation_logic(
         # 1. Validate & extract content
         # ------------------------------------------------------------------
         yield _create_stream_event("status", message="Validating inputs and extracting content…")
-        corpus, img_tokens = await _validate_and_extract_files(files, request_id)
+        corpus = await _validate_and_extract_files(files, request_id)
+        img_tokens: list[str] = []  # Vision model no longer used; keep for compatibility
         yield _create_stream_event(
             "status",
-            message=f"Content extracted: {len(corpus)} chars, {len(img_tokens)} images.",
+            message=f"Content extracted: {len(corpus)} chars.",
         )
 
         # ------------------------------------------------------------------
