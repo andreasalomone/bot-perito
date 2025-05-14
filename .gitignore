@@ -60,8 +60,15 @@ frontend/build/
 .vercel/
 .env
 
-# Test Fixtures
-/tests/fixtures/
+# Tests (exclude all test folders and files)
+tests/
+tests/__init__.py
+tests/conftest.py
+tests/fixtures/
+tests/unit/
+tests/integration/
+tests/e2e/
+tests/__pycache__/
 
 # Project data (if not versioned)
 data/
@@ -70,6 +77,5 @@ data/
 .cursorrules
 /.cursor/rules
 
-#docs
+# Documentation
 docs/
-/docs
