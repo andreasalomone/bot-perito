@@ -7,7 +7,7 @@ from app.core.cleanup import cleanup_tmp
 logger = logging.getLogger(__name__)
 
 
-def handler(event, context):
+def handler(_event: dict, _context: dict) -> dict[str, str]:
     """Scheduled cleanup function to delete old files in /tmp."""
     logger.info("Cleanup cron job invoked.")
     cleanup_tmp()

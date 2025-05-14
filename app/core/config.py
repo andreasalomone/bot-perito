@@ -103,7 +103,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v):
+    def assemble_cors_origins(cls, v: str | list[str] | None) -> list[str]:
         """Assembles the list of CORS allowed origins.
 
         If 'v' is a string, it splits it by commas. If 'v' is already a list,

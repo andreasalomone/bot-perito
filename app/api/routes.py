@@ -1,5 +1,7 @@
 import logging
+from collections.abc import Callable
 from functools import wraps
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter
@@ -31,11 +33,11 @@ router = APIRouter(prefix="/api")
 
 
 # --- Error Handling Decorator for DOCX Generation ---
-def handle_docx_generation_errors(func):
+def handle_docx_generation_errors(func: Callable) -> Callable:
     """Decorator to handle common errors during DOCX generation endpoints."""
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: Any, **kwargs: Any) -> StreamingResponse:
         # Extract request_id, assuming it's generated within the decorated function
         # or passed explicitly. If not standard, this might need adjustment.
         # For simplicity, we'll generate one if not obvious from args/kwargs.
@@ -101,7 +103,7 @@ async def generate(
         ..., description="List of source documents (PDF, DOCX, JPG, PNG)."
     ),
     notes: str = Form("", description="Optional free-text notes from the user."),
-):
+) -> StreamingResponse:
     """Initiates the report generation process.
 
     Accepts uploaded files and optional notes, then streams back NDJSON events
@@ -128,7 +130,7 @@ async def generate(
 async def generate_with_clarifications(
     payload: ClarificationPayload,
     request_id: str,  # Injected by decorator
-):
+) -> StreamingResponse:
     """Receives user clarifications, runs the full report generation pipeline,
     and returns the final DOCX document directly.
 
@@ -175,7 +177,7 @@ async def generate_with_clarifications(
 async def finalize_report(
     final_ctx_payload: ReportContext,  # Now expects ReportContext directly
     request_id: str,  # Injected by decorator
-):
+) -> StreamingResponse:
     """Generates the final DOCX report from the provided context data.
 
     This endpoint is used after the `/generate` stream successfully yields

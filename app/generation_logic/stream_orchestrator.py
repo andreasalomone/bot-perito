@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
 
@@ -11,13 +12,13 @@ from app.core.exceptions import PipelineError
 from app.generation_logic.context_preparation import _extract_base_context
 from app.generation_logic.context_preparation import _load_template_excerpt
 from app.generation_logic.file_processing import _validate_and_extract_files
+from app.generation_logic.static_content import PREDEFINED_STYLE_REFERENCE_TEXT
 from app.models.report_models import ReportContext
 from app.services.clarification_service import ClarificationService
 from app.services.extractor import ExtractorError
 from app.services.llm import JSONParsingError
 from app.services.llm import LLMError
 from app.services.pipeline import PipelineService
-from app.services.style_loader import load_style_samples
 
 __all__ = [
     "_create_stream_event",
@@ -54,7 +55,7 @@ def _create_stream_event(
 
 # --- Helper: Style Loading ---
 async def _helper_load_styles() -> str:
-    return await load_style_samples()
+    return PREDEFINED_STYLE_REFERENCE_TEXT
 
 
 # --- Helper: File Validation & Extraction ---
@@ -83,7 +84,7 @@ def _helper_clarification_check(
     template_excerpt: str,
     reference_style_text: str,
     request_id: str,
-):
+) -> tuple[list[dict[str, str]] | None, dict[str, Any] | None]:
     clarification_service = ClarificationService()
     missing_info_list = clarification_service.identify_missing_fields(base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION)
     if missing_info_list:
@@ -107,7 +108,9 @@ def _helper_clarification_check(
 
 
 # --- Helper: Main Pipeline Execution ---
-async def _helper_run_pipeline(request_id: str, template_excerpt: str, corpus: str, notes: str, reference_style_text: str):
+async def _helper_run_pipeline(
+    request_id: str, template_excerpt: str, corpus: str, notes: str, reference_style_text: str
+) -> AsyncGenerator[str, None]:
     pipeline = PipelineService()
     async for pipeline_update_json_str in pipeline.run(
         request_id=request_id,
@@ -132,7 +135,7 @@ def _helper_merge_final_context(base_ctx: dict, section_map_from_pipeline: dict)
 async def _stream_report_generation_logic(
     files: list[UploadFile],
     notes: str,
-):
+) -> AsyncGenerator[str, None]:
     """Orchestrate the end-to-end report generation, yielding NDJSON events that
     clients can consume as a stream.
     """

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class PipelineService:
     """Orchestrates the report generation pipeline using dedicated step services."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("Initializing PipelineService with step services")
         # Instantiate step services (can use DI later)
         self.outline_service = OutlineService()
@@ -99,7 +99,7 @@ class PipelineService:
                 yield json.dumps(
                     {
                         "type": "status",
-                        "message": f"Expanding section {i + 1}/{len(outline)}: {sec_outline_item['title']}...",
+                        "message": f"Expanding section {i + 1}/{len(outline)}: {sec_outline_item.title}...",
                     }
                 )
                 # Call the SectionExpansionService method
@@ -111,11 +111,11 @@ class PipelineService:
                     notes,  # Pass notes directly
                     reference_style_text,  # Pass styles directly
                 )
-                sections[sec_outline_item["section"]] = text
+                sections[sec_outline_item.section] = text
                 yield json.dumps(
                     {
                         "type": "status",
-                        "message": f"Section '{sec_outline_item['title']}' expanded.",
+                        "message": f"Section '{sec_outline_item.title}' expanded.",
                     }
                 )
 

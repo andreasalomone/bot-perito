@@ -4,6 +4,7 @@ import io
 # import json # No longer needed for json.loads
 import logging
 import re
+from typing import Any
 from uuid import uuid4
 
 from docx import Document
@@ -62,10 +63,10 @@ SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING: dict[str, str] = {
 }
 
 
-def _add_markdown(par, txt: str):  # Added type hint for txt
+def _add_markdown(par: Any, txt: str) -> None:  # Added type hint for txt and return type
     """Add markdown-style formatting to a paragraph."""
-    # Ensure txt is a string before processing
-    processed_txt = txt if isinstance(txt, str) else ""
+    # Ensure txt is a string before processing, handles None or other types gracefully
+    processed_txt = str(txt) if txt is not None else ""
     try:
         pos = 0
         for m in BOLD_RE.finditer(processed_txt):

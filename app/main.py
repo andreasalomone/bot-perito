@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -19,12 +20,12 @@ app = FastAPI(title="Report-AI MVP")
 
 
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc):
+async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
+async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
     return JSONResponse(
         {"error": "Input validation failed", "details": exc.errors()},
         status_code=422,
@@ -32,22 +33,22 @@ async def validation_exception_handler(request, exc):
 
 
 @app.exception_handler(PipelineError)
-async def pipeline_exception_handler(request, exc):
+async def pipeline_exception_handler(_request: Request, exc: PipelineError) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.exception_handler(DocBuilderError)
-async def docbuilder_exception_handler(request, exc):
+async def docbuilder_exception_handler(_request: Request, exc: DocBuilderError) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.exception_handler(LLMError)
-async def llm_exception_handler(request, exc):
+async def llm_exception_handler(_request: Request, exc: LLMError) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.exception_handler(JSONParsingError)
-async def jsonparsing_exception_handler(request, exc):
+async def jsonparsing_exception_handler(_request: Request, exc: JSONParsingError) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=500)
 
 
