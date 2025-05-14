@@ -1,9 +1,9 @@
-import asyncio
 import io
 from typing import List
 
 import pytest
 from fastapi import HTTPException
+from pytest import MonkeyPatch
 from starlette.datastructures import UploadFile
 
 # Target under test
@@ -36,13 +36,13 @@ aSYNC_FIXTURE = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_and_extract_happy_path(monkeypatch):
+async def test_validate_and_extract_happy_path(monkeypatch: MonkeyPatch) -> None:
     """A single small, valid PDF should pass validation and return a corpus string."""
 
     dummy_text = "Estratto testo"
 
     # Patch extractor.extract to return dummy text
-    def _fake_extract(filename, file_stream, request_id):  # type: ignore[arg-type]
+    def _fake_extract(filename: str, file_stream: io.BytesIO, request_id: str) -> tuple[str, None]:
         # Simulate the real signature (returns text, token)
         return dummy_text, None
 
@@ -53,7 +53,7 @@ async def test_validate_and_extract_happy_path(monkeypatch):
     # Patch magic.from_buffer to return correct MIME for .pdf
     monkeypatch.setattr(
         "app.generation_logic.file_processing.magic.from_buffer",
-        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],
+        lambda _bytes: MIME_MAPPING[".pdf"],  # type: ignore
         raising=True,
     )
 
@@ -68,17 +68,17 @@ async def test_validate_and_extract_happy_path(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_too_many_files(monkeypatch):
+async def test_validate_too_many_files(monkeypatch: MonkeyPatch) -> None:
     """Uploading more than MAX_FILES should raise HTTPException 413."""
 
     # Minimal mocks – they won't be called, but patch to be safe
     monkeypatch.setattr(
         "app.generation_logic.file_processing.extract",
-        lambda *args, **kwargs: ("", None),
+        lambda *args, **kwargs: ("", None),  # type: ignore
     )
     monkeypatch.setattr(
         "app.generation_logic.file_processing.magic.from_buffer",
-        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],
+        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],  # type: ignore
     )
 
     files: List[UploadFile] = [
@@ -97,12 +97,12 @@ async def test_validate_too_many_files(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_individual_file_too_large(monkeypatch):
+async def test_validate_individual_file_too_large(monkeypatch: MonkeyPatch) -> None:
     """A single file exceeding MAX_FILE_SIZE should be rejected with 413."""
 
     monkeypatch.setattr(
         "app.generation_logic.file_processing.magic.from_buffer",
-        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],
+        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],  # type: ignore
     )
 
     oversized = b"0" * (MAX_FILE_SIZE + 1)
@@ -119,12 +119,12 @@ async def test_validate_individual_file_too_large(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_total_size_too_large(monkeypatch):
+async def test_validate_total_size_too_large(monkeypatch: MonkeyPatch) -> None:
     """Combined size > MAX_TOTAL_SIZE should be rejected."""
 
     monkeypatch.setattr(
         "app.generation_logic.file_processing.magic.from_buffer",
-        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],
+        lambda _bytes, mime=True: MIME_MAPPING[".pdf"],  # type: ignore
     )
 
     small_chunk = b"0" * (MAX_TOTAL_SIZE // MAX_FILES)
@@ -144,7 +144,7 @@ async def test_validate_total_size_too_large(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_invalid_extension(monkeypatch):
+async def test_validate_invalid_extension(monkeypatch: MonkeyPatch) -> None:
     """A file with an unsupported extension should raise 400."""
 
     f = _make_upload_file("invalid.exe", b"dummy")
@@ -159,13 +159,13 @@ async def test_validate_invalid_extension(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @aSYNC_FIXTURE
-async def test_validate_mismatched_mime(monkeypatch):
+async def test_validate_mismatched_mime(monkeypatch: MonkeyPatch) -> None:
     """If magic returns a MIME different from expected, should raise 400."""
 
     # Patch magic to return text/plain instead of application/pdf
     monkeypatch.setattr(
         "app.generation_logic.file_processing.magic.from_buffer",
-        lambda _bytes, mime=True: "text/plain",
+        lambda _bytes, mime=True: "text/plain",  # type: ignore
     )
 
     f = _make_upload_file("file.pdf", b"%PDF-1.4\n...")

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
         image_jpeg_quality: JPEG quality for generated image thumbnails.
         cors_allowed_origins: List of allowed origins for CORS.
         CRITICAL_FIELDS_FOR_CLARIFICATION: Configuration for fields requiring user clarification.
+        LLM_CONNECT_TIMEOUT: LLM client connect timeout in seconds.
+        LLM_READ_TIMEOUT: LLM client read timeout in seconds.
     """
 
     openrouter_api_key: str | None = Field(None, env="OPENROUTER_API_KEY")
@@ -93,6 +95,9 @@ class Settings(BaseSettings):
             },
         }
     )
+
+    LLM_CONNECT_TIMEOUT: float = Field(10.0, description="LLM client connect timeout in seconds.")
+    LLM_READ_TIMEOUT: float = Field(180.0, description="LLM client read timeout in seconds.")
 
     model_config = {"env_file": ".env", "protected_namespaces": ("settings_",)}
 

@@ -51,6 +51,70 @@ def _create_stream_event(
     return json.dumps(event) + "\n"
 
 
+# --- Helper: Style Loading ---
+async def _helper_load_styles() -> str:
+    return await load_style_samples()
+
+
+# --- Helper: File Validation & Extraction ---
+async def _helper_validate_and_extract(files: list[UploadFile], request_id: str) -> str:
+    return await _validate_and_extract_files(files, request_id)
+
+
+# --- Helper: Template Excerpt Loading ---
+async def _helper_load_template_excerpt(template_path_str: str, request_id: str) -> str:
+    return await _load_template_excerpt(template_path_str, request_id)
+
+
+# --- Helper: Base Context LLM ---
+async def _helper_extract_base_context(
+    template_excerpt: str, corpus: str, notes: str, request_id: str, reference_style_text: str
+) -> dict:
+    return await _extract_base_context(template_excerpt, corpus, notes, request_id, reference_style_text)
+
+
+# --- Helper: Clarification Check ---
+def _helper_clarification_check(
+    base_ctx: dict,
+    corpus: str,
+    notes: str,
+    original_notes: str,
+    template_excerpt: str,
+    reference_style_text: str,
+    request_id: str,
+):
+    clarification_service = ClarificationService()
+    missing_info_list = clarification_service.identify_missing_fields(base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION)
+    if missing_info_list:
+        request_artifacts_data: dict[str, Any] = {
+            "original_corpus": corpus,
+            "notes": original_notes,
+            "template_excerpt": template_excerpt,
+            "reference_style_text": reference_style_text,
+            "initial_llm_base_fields": base_ctx,
+        }
+        return missing_info_list, request_artifacts_data
+    return None, None
+
+
+# --- Helper: Main Pipeline Execution ---
+async def _helper_run_pipeline(request_id: str, template_excerpt: str, corpus: str, notes: str, reference_style_text: str):
+    pipeline = PipelineService()
+    async for pipeline_update_json_str in pipeline.run(
+        request_id=request_id,
+        template_excerpt=template_excerpt,
+        corpus=corpus,
+        notes=notes,
+        reference_style_text=reference_style_text,
+    ):
+        yield pipeline_update_json_str
+
+
+# --- Helper: Final Context Merge ---
+def _helper_merge_final_context(base_ctx: dict, section_map_from_pipeline: dict) -> dict:
+    return {**base_ctx, **section_map_from_pipeline}
+
+
 # ---------------------------------------------------------------------------
 # Main streaming generation orchestrator
 # ---------------------------------------------------------------------------
@@ -72,73 +136,55 @@ async def _stream_report_generation_logic(
 
     original_notes = notes
     section_map_from_pipeline: dict[str, Any] | None = None
+    _final_event_sent = False
 
     try:
         template_path_str = str(settings.template_path)
 
-        # ------------------------------------------------------------------
         # 0. Load styles early (for consistency)
-        # ------------------------------------------------------------------
-        reference_style_text = load_style_samples()
+        reference_style_text = await _helper_load_styles()
         yield _create_stream_event("status", message="Stylistic references loaded.")
 
-        # ------------------------------------------------------------------
         # 1. Validate & extract content
-        # ------------------------------------------------------------------
         yield _create_stream_event("status", message="Validating inputs and extracting content…")
-        corpus = await _validate_and_extract_files(files, request_id)
-        img_tokens: list[str] = []  # Vision model no longer used; keep for compatibility
+        corpus = await _helper_validate_and_extract(files, request_id)
         yield _create_stream_event(
             "status",
             message=f"Content extracted: {len(corpus)} chars.",
         )
 
-        # ------------------------------------------------------------------
         # 2. Template excerpt
-        # ------------------------------------------------------------------
         yield _create_stream_event("status", message="Loading template excerpt…")
-        template_excerpt = await _load_template_excerpt(template_path_str, request_id)
+        template_excerpt = await _helper_load_template_excerpt(template_path_str, request_id)
         yield _create_stream_event("status", message="Template excerpt loaded.")
 
-        # ------------------------------------------------------------------
         # 3. Base context via LLM
-        # ------------------------------------------------------------------
         yield _create_stream_event("status", message="Extracting base document context (LLM)…")
-        base_ctx = await _extract_base_context(
+        base_ctx = await _helper_extract_base_context(
             template_excerpt,
             corpus,
-            img_tokens,
             notes,
             request_id,
             reference_style_text,
         )
         yield _create_stream_event("status", message="Base document context extracted.")
 
-        # ------------------------------------------------------------------
         # 4. Clarification step
-        # ------------------------------------------------------------------
-        clarification_service = ClarificationService()
-        missing_info_list = clarification_service.identify_missing_fields(base_ctx, settings.CRITICAL_FIELDS_FOR_CLARIFICATION)
-
+        missing_info_list, request_artifacts_data = _helper_clarification_check(
+            base_ctx, corpus, notes, original_notes, template_excerpt, reference_style_text, request_id
+        )
         if missing_info_list:
             logger.info(
                 "[%s] Clarification needed for %d fields.",
                 request_id,
                 len(missing_info_list),
             )
-            request_artifacts_data: dict[str, Any] = {
-                "original_corpus": corpus,
-                "image_tokens": img_tokens,
-                "notes": original_notes,
-                "template_excerpt": template_excerpt,
-                "reference_style_text": reference_style_text,
-                "initial_llm_base_fields": base_ctx,
-            }
             yield _create_stream_event(
                 "clarification_needed",
                 missing_fields=missing_info_list,
                 request_artifacts=request_artifacts_data,
             )
+            _final_event_sent = True
             return
 
         yield _create_stream_event(
@@ -146,17 +192,14 @@ async def _stream_report_generation_logic(
             message="No immediate clarifications needed. Starting main report generation pipeline…",
         )
 
-        # ------------------------------------------------------------------
         # 5. Streaming pipeline
-        # ------------------------------------------------------------------
-        pipeline = PipelineService()
-        async for pipeline_update_json_str in pipeline.run(
-            request_id=request_id,
-            template_excerpt=template_excerpt,
-            corpus=corpus,
-            imgs=img_tokens,
-            notes=notes,
-            reference_style_text=reference_style_text,
+        section_map_from_pipeline = None
+        async for pipeline_update_json_str in _helper_run_pipeline(
+            request_id,
+            template_excerpt,
+            corpus,
+            notes,
+            reference_style_text,
         ):
             try:
                 update_data = json.loads(pipeline_update_json_str)
@@ -176,6 +219,7 @@ async def _stream_report_generation_logic(
                         "error",
                         message=update_data.get("message", "Unknown pipeline error"),
                     )
+                    _final_event_sent = True
                     return
                 else:
                     yield _create_stream_event(
@@ -193,9 +237,7 @@ async def _stream_report_generation_logic(
                     message="Processing report sections (received non-JSON update)…",
                 )
 
-        # ------------------------------------------------------------------
         # 6. Final merge
-        # ------------------------------------------------------------------
         if section_map_from_pipeline is None:
             logger.error(
                 "[%s] Pipeline completed without providing final section map.",
@@ -203,7 +245,7 @@ async def _stream_report_generation_logic(
             )
             raise PipelineError("Pipeline did not return section map data.")
 
-        final_ctx = {**base_ctx, **section_map_from_pipeline}
+        final_ctx = _helper_merge_final_context(base_ctx, section_map_from_pipeline)
         yield _create_stream_event(
             "data",
             message="Report data processing complete. Document download will be initiated by client.",
@@ -211,13 +253,10 @@ async def _stream_report_generation_logic(
         )
 
         # Send a 'finished' event to properly close the stream
-        # This helps the frontend know the stream has ended successfully
         yield _create_stream_event("finished", message="Stream completed successfully.")
+        _final_event_sent = True
 
-    # ----------------------------------------------------------------------
-    # Error handling
-    # ----------------------------------------------------------------------
-    except ConfigurationError as ce:  # Catch specific configuration errors
+    except ConfigurationError as ce:
         logger.error(
             "[%s] ConfigurationError during stream: %s",
             request_id,
@@ -225,21 +264,25 @@ async def _stream_report_generation_logic(
             exc_info=False,
         )
         yield _create_stream_event("error", message=f"Configuration error: {str(ce)}")
-    except ExtractorError as ee:  # Catch specific extractor errors
+        _final_event_sent = True
+    except ExtractorError as ee:
         logger.error("[%s] ExtractorError during stream: %s", request_id, str(ee), exc_info=False)
         yield _create_stream_event("error", message=f"File extraction error: {str(ee)}")
+        _final_event_sent = True
     except PipelineError as pe:
         logger.error(
             "[%s] PipelineError during stream orchestration: %s",
             request_id,
             str(pe),
-            exc_info=False,  # Usually logged deeper if it's a re-raise
+            exc_info=False,
         )
         yield _create_stream_event("error", message=f"Pipeline processing error: {str(pe)}")
-    except LLMError as le:  # Specific LLM errors
+        _final_event_sent = True
+    except LLMError as le:
         logger.error("[%s] LLMError during stream: %s", request_id, str(le), exc_info=False)
         yield _create_stream_event("error", message=f"Language model processing error: {str(le)}")
-    except JSONParsingError as jpe:  # Specific JSON parsing errors
+        _final_event_sent = True
+    except JSONParsingError as jpe:
         logger.error(
             "[%s] JSONParsingError during stream: %s",
             request_id,
@@ -247,13 +290,21 @@ async def _stream_report_generation_logic(
             exc_info=False,
         )
         yield _create_stream_event("error", message=f"Data parsing error: {str(jpe)}")
-    except Exception as e:  # General catch-all MUST be last
+        _final_event_sent = True
+    except Exception as e:
         logger.exception(
             "[%s] Unexpected error during report generation stream: %s",
             request_id,
             str(e),
-            exc_info=True,  # Log full trace for truly unexpected errors
+            exc_info=True,
         )
         yield _create_stream_event("error", message=f"An unexpected server error occurred: {str(e)}")
+        _final_event_sent = True
     finally:
-        logger.info("[%s] Stream generation logic finished.", request_id)
+        if not _final_event_sent:
+            logger.warning(f"[{request_id}] Stream exiting without a proper final event. Yielding generic error.")
+            yield _create_stream_event(
+                event_type="error",
+                message="The report generation process terminated unexpectedly on the server. Please try again.",
+            )
+        logger.info(f"[{request_id}] Stream generation logic finished.")

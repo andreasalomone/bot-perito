@@ -1,11 +1,10 @@
-import base64
+import asyncio
 import io
 import logging
 from typing import BinaryIO
 
 import pdfplumber
 from docx import Document
-from PIL import Image
 
 from app.core.config import settings
 from app.core.ocr import ocr
@@ -18,102 +17,64 @@ class ExtractorError(Exception):
     """Base exception for extraction-related errors"""
 
 
-def _pdf_to_text(f: BinaryIO) -> str:
+async def _pdf_to_text(f: BinaryIO) -> str:
     """Extract text from PDF file."""
-    try:
-        # Read binary stream into BytesIO for pdfplumber
-        f.seek(0)
-        buffer = io.BytesIO(f.read())
+
+    def _sync_pdf_extraction(file_bytes: bytes) -> str:
+        buffer = io.BytesIO(file_bytes)
         with pdfplumber.open(buffer) as pdf:
             text = "\n".join(p.extract_text() or "" for p in pdf.pages)
             logger.debug("Extracted %d chars from PDF", len(text))
             return text
+
+    try:
+        f.seek(0)
+        file_bytes = f.read()
+        return await asyncio.to_thread(_sync_pdf_extraction, file_bytes)
     except Exception as e:
         logger.error("Failed to extract text from PDF: %s", str(e), exc_info=True)
         raise ExtractorError("Failed to extract text from PDF") from e
 
 
-def _docx_to_text(f: BinaryIO) -> str:
+async def _docx_to_text(f: BinaryIO) -> str:
     """Extract text from DOCX file."""
-    try:
-        # Read binary stream into BytesIO for Document
-        f.seek(0)
-        buffer = io.BytesIO(f.read())
+
+    def _sync_docx_extraction(file_bytes: bytes) -> str:
+        buffer = io.BytesIO(file_bytes)
         doc = Document(buffer)
         text = "\n".join(p.text for p in doc.paragraphs)
         logger.debug("Extracted %d chars from DOCX", len(text))
         return text
+
+    try:
+        f.seek(0)
+        file_bytes = f.read()
+        return await asyncio.to_thread(_sync_docx_extraction, file_bytes)
     except Exception as e:
         logger.error("Failed to extract text from DOCX: %s", str(e), exc_info=True)
         raise ExtractorError("Failed to extract text from DOCX") from e
 
 
-def _image_handler(fname: str, f: BinaryIO, request_id: str) -> tuple[str, str]:
-    """Return (text, img_token). img_token is base64 if vision enabled."""
+async def _image_handler(fname: str, f: BinaryIO, request_id: str) -> str:
+    """Return text"""
     logger.info("[%s] Processing image file: %s", request_id, fname)
 
     try:
         f.seek(0)
-        text = ocr(f)
+        # Always await the ocr function since we've confirmed it's asynchronous
+        text = await ocr(f)
         logger.debug("[%s] OCR extracted %d chars", request_id, len(text.strip()))
 
-        if len(text.strip()) > 30 or not settings.allow_vision:
-            logger.info("[%s] Using OCR text (length > 30 or vision disabled)", request_id)
-            return text, ""  # good OCR or vision disabled
-
-        # no text ➜ pass downsized image to LLM
-        try:
-            f.seek(0)
-            img = Image.open(f).convert("RGB")
-            img.thumbnail(
-                (
-                    settings.image_thumbnail_width,
-                    settings.image_thumbnail_height,
-                )
-            )  # Use settings
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=settings.image_jpeg_quality)  # Use settings
-            buf.seek(0)
-            b64 = base64.b64encode(buf.read()).decode()
-            token = f"data:image/jpeg;base64,{b64}"
-            logger.debug("[%s] Generated base64 token, length: %d", request_id, len(token))
-            return "", token
-        except Exception as e:
-            logger.error("[%s] Failed to process image: %s", request_id, str(e), exc_info=True)
-            raise ExtractorError("Failed to process image file") from e
+        if len(text.strip()) > 0:
+            logger.info("[%s] Using OCR text (length > 0)", request_id)
+            return text  # good OCR
+        else:
+            logger.info("[%s] No OCR text found", request_id)
+            return ""  # no OCR text
 
     except Exception as e:
         logger.exception("[%s] Failed to handle image file: %s", request_id, fname)
         raise ExtractorError(f"Failed to handle image file: {fname}") from e
-
-
-def extract_damage_image(f: BinaryIO, request_id: str) -> tuple[str, str]:
-    """Always return ("", base64_token) so the vision model
-    receives every damage photo even if OCR finds text.
-    """
-    logger.info("[%s] Processing damage image", request_id)
-
-    try:
-        f.seek(0)
-        img = Image.open(f).convert("RGB")
-        img.thumbnail(
-            (
-                settings.image_thumbnail_width,
-                settings.image_thumbnail_height,
-            )
-        )  # Use settings
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=settings.image_jpeg_quality)  # Use settings
-        token = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
-        logger.debug(
-            "[%s] Generated base64 token for damage image, length: %d",
-            request_id,
-            len(token),
-        )
-        return "", token
-    except Exception as e:
-        logger.error("[%s] Failed to process damage image: %s", request_id, str(e), exc_info=True)
-        raise ExtractorError("Failed to process damage image") from e
 
 
 _HANDLERS = {
@@ -123,26 +84,37 @@ _HANDLERS = {
 }
 
 
-def extract(fname: str, f: BinaryIO, request_id: str) -> tuple[str, str]:
-    """Extract text and/or image token from a file based on its extension."""
+async def extract(fname: str, f: BinaryIO, request_id: str) -> str:
+    """Extract text from a file based on its extension."""
     ext = fname.lower().split(".")[-1]
     logger.info("[%s] Extracting content from file: %s (type: %s)", request_id, fname, ext)
 
     try:
-        if ext in _HANDLERS:
-            text = _HANDLERS[ext](f)
+        if ext == "pdf":
+            text = await _pdf_to_text(f)
             logger.info(
                 "[%s] Successfully extracted text from %s: %d chars",
                 request_id,
                 ext.upper(),
                 len(text),
             )
-            return text, ""
+            return text
+
+        if ext in {"docx", "doc"}:
+            text = await _docx_to_text(f)
+            logger.info(
+                "[%s] Successfully extracted text from %s: %d chars",
+                request_id,
+                ext.upper(),
+                len(text),
+            )
+            return text
 
         if ext in {"png", "jpg", "jpeg"}:
-            text, token = _image_handler(fname, f, request_id)
+            # Manually handle image files rather than trying to await _image_handler which is already async
+            text = await _image_handler(fname, f, request_id)
             logger.info("[%s] Successfully processed image file: %s", request_id, fname)
-            return text, token
+            return text
 
         # Fallback for unknown types
         logger.warning(

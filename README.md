@@ -128,7 +128,6 @@ vercel --prod
 
 **Form Data**:
 - `files`: One or more document files (`.pdf`, `.docx`, `.doc`, images)
-- `damage_imgs`: (Optional) Up to 10 damage images
 - `notes`: (Optional) Additional notes for the report
 
 **Response**:

@@ -32,7 +32,7 @@ async def _generate_and_stream_docx(
     """
     try:
         # Pass the final_context ReportContext object directly to inject
-        docx_bytes = inject(str(template_path), final_context)
+        docx_bytes = await inject(str(template_path), final_context)
         logger.info("[%s] Successfully generated DOCX report", request_id)
         return StreamingResponse(
             iter([docx_bytes]),

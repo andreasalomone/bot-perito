@@ -84,7 +84,6 @@ async def build_report_with_clarifications(
             request_id=request_id,
             template_excerpt=template_excerpt,
             corpus=artifacts.original_corpus,
-            imgs=artifacts.image_tokens,
             notes=artifacts.notes,
             reference_style_text=reference_style_text,
         ):

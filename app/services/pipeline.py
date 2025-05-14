@@ -48,10 +48,10 @@ class PipelineService:
         request_id: str,
         template_excerpt: str,
         corpus: str,
-        imgs: list[str],  # Keep imgs param even if not used in current steps
         notes: str,
         reference_style_text: str,
     ) -> AsyncGenerator[str, None]:
+        """Run the report generation pipeline. (imgs parameter removed as unused)"""
         logger.info("[%s] Starting pipeline run with corpus length %d", request_id, len(corpus))
         try:
             yield json.dumps(

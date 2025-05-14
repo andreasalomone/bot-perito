@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
+from unittest.mock import Mock
 
 from app.api import routes as routes_module
 from app.core.validation import MIME_MAPPING
@@ -17,7 +18,7 @@ from app.generation_logic.file_processing import _validate_and_extract_files
 THREE_MB = 3 * 1024 * 1024
 
 # Global variable for MIME type tracking in tests
-_current_mime: str = ""
+# _current_mime: str = ""
 
 def _make_file_tuple(fname: str, mime: str):
     """Return (filename, bytes, mime) tuple for multipart."""
@@ -49,17 +50,14 @@ def fastapi_app(monkeypatch):
         lambda fname, stream, req_id: ("dummy text", None),
     )
 
-    # Patch magic.from_buffer to return correct MIME for each extension
-    def _fake_magic(buf: bytes, mime=True):  # pylint: disable=unused-argument
-        return _current_mime
-
-    monkeypatch.setattr("app.generation_logic.file_processing.magic.from_buffer", _fake_magic)
+    # Remove the old _fake_magic and global _current_mime logic
+    # The patch for magic.from_buffer will be set up in the test itself
 
     return app
 
 
 @pytest.mark.asyncio
-async def test_generate_happy_path(fastapi_app):
+async def test_generate_happy_path(fastapi_app, monkeypatch):
     client = TestClient(fastapi_app)
 
     # Build 10 files of 3 MiB each with correct MIME
@@ -77,10 +75,15 @@ async def test_generate_happy_path(fastapi_app):
         ("file2.docx", MIME_MAPPING[".docx"]),
     ]
 
-    global _current_mime  # noqa: PLW0603 – used in fake_magic closure
     for fname, mime in sample_files:
-        _current_mime = mime  # type: ignore  # captured by fake_magic
         files.append(("files", _make_file_tuple(fname, mime)))
+
+    # Patch magic.from_buffer to return the correct MIME for each file in order
+    expected_mimes_in_order = [mime for _, mime in sample_files]
+    monkeypatch.setattr(
+        "app.generation_logic.file_processing.magic.from_buffer",
+        Mock(side_effect=expected_mimes_in_order)
+    )
 
     response = client.post("/api/generate", files=files, data={"notes": ""})
     assert response.status_code == status.HTTP_200_OK

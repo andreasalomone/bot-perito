@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -25,9 +26,13 @@ async def _load_template_excerpt(template_path: str, request_id: str) -> str:
     """Read the first few paragraphs of the Word template to use as a style/context
     primer for the language model.
     """
+
+    def _perform_sync_template_excerpt_load(path_str: str) -> str:
+        template_doc = Document(str(path_str))
+        return "\n".join(p.text for p in template_doc.paragraphs[:8])
+
     try:
-        template_doc = Document(str(template_path))
-        template_excerpt = "\n".join(p.text for p in template_doc.paragraphs[:8])
+        template_excerpt = await asyncio.to_thread(_perform_sync_template_excerpt_load, str(template_path))
         logger.debug("[%s] Loaded template excerpt: %d chars", request_id, len(template_excerpt))
         return template_excerpt
     except PackageNotFoundError as e:
@@ -46,7 +51,6 @@ async def _load_template_excerpt(template_path: str, request_id: str) -> str:
 async def _extract_base_context(
     template_excerpt: str,
     corpus: str,
-    imgs: list[str],
     notes: str,
     request_id: str,
     reference_style_text: str,
@@ -87,4 +91,6 @@ async def _extract_base_context(
             str(e),
             exc_info=True,
         )
+        if isinstance(e, PipelineError):
+            raise
         raise PipelineError("Unexpected error during base context extraction") from e

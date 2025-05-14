@@ -5,6 +5,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
+import httpx
 import jinja2
 from openai import AsyncOpenAI
 from openai import OpenAIError
@@ -44,14 +45,22 @@ except Exception:
 # ---------------------------------------------------------------
 # OpenRouter client (sync) with required headers
 # ---------------------------------------------------------------
+# Define timeouts based on settings
+timeout_config = httpx.Timeout(
+    settings.LLM_CONNECT_TIMEOUT,
+    read=settings.LLM_READ_TIMEOUT,
+    # Pool timeout can be added if supported and needed: pool=settings.LLM_POOL_TIMEOUT
+)
+
 client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=settings.openrouter_api_key,
     default_headers={
-        "HTTP-Referer": "http://localhost",
+        "HTTP-Referer": "http://localhost",  # For Vercel, consider using the deployed domain or omitting if not required
         "X-Title": "bot-perito",
         # Authorization is auto‑added from api_key
     },
+    timeout=timeout_config,  # Pass the timeout config
 )
 
 
@@ -116,35 +125,48 @@ async def call_llm(prompt: str) -> str:
 # JSON extractor helper
 # ---------------------------------------------------------------
 def extract_json(text: str) -> dict:
-    """Tenta di deserializzare `text` come JSON puro.
-    Se fallisce, estrae il primo blocco { … } con regex e riprova.
-    """
+    """Attempts to robustly extract and parse JSON from LLM responses, handling markdown fences and extraneous text."""
     request_id = str(uuid4())
     logger.debug("[%s] Attempting to parse JSON response, length: %d", request_id, len(text))
 
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("[%s] Initial JSON parse failed, attempting regex extraction", request_id)
+        logger.warning("[%s] Initial JSON parse failed, attempting extraction strategies...", request_id)
+
+    # Strategy 1: Markdown Code Fence Extraction
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.DOTALL)
+    if match:
+        extracted_block = match.group(1)
         try:
-            match = re.search(r"\{.*\}", text, re.S)
-            if not match:
-                logger.error("[%s] No JSON-like structure found in text", request_id)
-                raise JSONParsingError("No JSON structure found in response")
-            extracted = match.group(0)
-            logger.info("[%s] Found JSON-like structure, attempting parse", request_id)
-            return json.loads(extracted)
-        except json.JSONDecodeError as e:
-            logger.error(
-                "[%s] Failed to parse extracted JSON: %s",
-                request_id,
-                str(e),
-                exc_info=True,
-            )
-            raise JSONParsingError(f"Failed to parse JSON: {str(e)}") from e
-        except Exception as e:
-            logger.exception("[%s] Unexpected error parsing JSON", request_id)
-            raise JSONParsingError(f"Unexpected error parsing JSON: {str(e)}") from e
+            result = json.loads(extracted_block)
+            logger.info("[%s] Successfully parsed JSON from markdown code fence.", request_id)
+            return result
+        except json.JSONDecodeError:
+            logger.warning("[%s] Failed to parse JSON from fenced block, trying next strategy...", request_id)
+
+    # Strategy 2: Use JSONDecoder().raw_decode for first object/array
+    decoder = json.JSONDecoder()
+    obj_start = text.find("{")
+    arr_start = text.find("[")
+    if obj_start == -1 and arr_start == -1:
+        logger.error("[%s] No JSON object or array marker found in response", request_id)
+        raise JSONParsingError("No JSON object or array marker found in response")
+    # Find the minimum non-negative start position
+    start_pos = min([pos for pos in [obj_start, arr_start] if pos != -1])
+    try:
+        obj, _ = decoder.raw_decode(text, start_pos)
+        logger.info("[%s] Successfully parsed JSON using raw_decode.", request_id)
+        return obj
+    except json.JSONDecodeError as e:
+        logger.error(
+            "[%s] Failed to parse JSON using raw_decode: %s",
+            request_id,
+            str(e),
+            exc_info=True,
+        )
+    logger.error("[%s] All strategies to parse JSON from LLM response failed.", request_id)
+    raise JSONParsingError("All strategies to parse JSON from LLM response failed.")
 
 
 # ---------------------------------------------------------------

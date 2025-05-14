@@ -60,7 +60,7 @@ async def _extract_single_file(filename: str, request_id: str, file_content_byte
     try:
         # Use io.BytesIO to treat the byte content as a file-like object
         with io.BytesIO(file_content_bytes) as file_stream:
-            txt, _ = extract(filename, file_stream, request_id)
+            txt = await extract(filename, file_stream, request_id)
 
         logger.debug(
             "[%s] Extracted from %s: text=%d chars",
@@ -94,6 +94,101 @@ async def _extract_single_file(filename: str, request_id: str, file_content_byte
 # ---------------------------------------------------------------------------
 
 
+async def _validate_single_uploaded_file(f_obj: UploadFile, request_id: str) -> tuple[str, bytes]:
+    filename = f_obj.filename or "unknown_file"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        logger.warning(
+            "[%s] Rejected file with invalid extension: %s for file %s",
+            request_id,
+            ext,
+            filename,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo file non supportato ('{filename}'). Estensioni permesse: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+    logger.debug(
+        "[%s] Attempting to read %s (type=%s, closed=%s)",
+        request_id,
+        filename,
+        type(f_obj.file),
+        getattr(f_obj.file, "closed", "?"),
+    )
+    try:
+        try:
+            if hasattr(f_obj.file, "seek") and callable(f_obj.file.seek):
+                await asyncio.to_thread(f_obj.file.seek, 0)
+            else:
+                logger.warning(f"[{request_id}] File object for {f_obj.filename} does not support seek.")
+        except Exception as seek_err:
+            logger.warning(f"[{request_id}] Error seeking file {f_obj.filename}: {seek_err}")
+        contents = await f_obj.read()
+    except Exception as async_read_err:
+        logger.error(
+            f"[{request_id}] Failed to read file content for {filename} during initial async read: {async_read_err}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Impossibile leggere '{filename}': errore di accesso al contenuto.",
+        ) from async_read_err
+    size = len(contents)
+    if size == 0:
+        logger.warning("[%s] Rejected empty file: %s", request_id, filename)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Il file '{filename}' è vuoto e non può essere processato.",
+        )
+    if size > MAX_FILE_SIZE:
+        logger.warning(
+            "[%s] Rejected file exceeding size limit: %s (%d bytes)",
+            request_id,
+            filename,
+            size,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail=f"File '{filename}' troppo grande ({size // (1024 * 1024)}MB). "
+            f"Limite per file: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+    try:
+        mime = await asyncio.to_thread(magic.from_buffer, contents, mime=True)
+    except Exception as mime_err:
+        logger.error(
+            "[%s] Failed to detect MIME type for: %s - %s",
+            request_id,
+            filename,
+            str(mime_err),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Errore durante l'analisi del tipo di file: {filename}",
+        ) from mime_err
+    expected_mime = MIME_MAPPING.get(ext)
+    if mime != expected_mime:
+        logger.warning(
+            "[%s] Rejected file with mismatched content type: %s. Expected: %s, Got: %s",
+            request_id,
+            filename,
+            expected_mime,
+            mime,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Il contenuto del file '{filename}' (rilevato: {mime}) "
+            f"non corrisponde all'estensione '{ext}' (atteso: {expected_mime}).",
+        )
+    logger.debug(
+        "[%s] File validation successful: %s (%d bytes, MIME: %s)",
+        request_id,
+        filename,
+        size,
+        mime,
+    )
+    return filename, contents
+
+
 async def _validate_and_extract_files(
     files: list[UploadFile],
     request_id: str,
@@ -114,109 +209,10 @@ async def _validate_and_extract_files(
 
     # --- Validation Loop ---
     for f_obj in files:
-        filename = f_obj.filename or "unknown_file"
-
-        # 1. Extension Check
-        ext = Path(filename).suffix.lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            logger.warning(
-                "[%s] Rejected file with invalid extension: %s for file %s",
-                request_id,
-                ext,
-                filename,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Tipo file non supportato ('{filename}'). Estensioni permesse: {', '.join(ALLOWED_EXTENSIONS)}",
-            )
-
-        # 2. Read Content ONCE for validation checks
-        logger.debug(
-            "[%s] Attempting to read %s (type=%s, closed=%s)",
-            request_id,
-            filename,
-            type(f_obj.file),
-            getattr(f_obj.file, "closed", "?"),
-        )
-
-        try:
-            contents = await f_obj.read()
-        except Exception as async_read_err:
-            # If the primary async read fails, log the error and raise an HTTPException.
-            # This avoids the fallback logic that causes "seek of closed file" on Vercel,
-            # as the file stream is likely already compromised.
-            logger.error(
-                "[%s] Failed to read file content for %s during initial async read: %s",
-                request_id,
-                filename,
-                str(async_read_err),
-                exc_info=True,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Impossibile leggere '{filename}': errore di accesso al contenuto.",
-            ) from async_read_err
-
+        filename, contents = await _validate_single_uploaded_file(f_obj, request_id)
         size = len(contents)
-
-        # 3. Individual File Size Check
-        if size == 0:  # Empty file check
-            logger.warning("[%s] Rejected empty file: %s", request_id, filename)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Il file '{filename}' è vuoto e non può essere processato.",
-            )
-        if size > MAX_FILE_SIZE:
-            logger.warning(
-                "[%s] Rejected file exceeding size limit: %s (%d bytes)",
-                request_id,
-                filename,
-                size,
-            )
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{filename}' troppo grande ({size // (1024 * 1024)}MB). Limite per file: {MAX_FILE_SIZE // (1024 * 1024)}MB",  # noqa: E501
-            )
-
-        # 4. MIME Type Check
-        try:
-            mime = magic.from_buffer(contents, mime=True)
-        except Exception as mime_err:
-            logger.error(
-                "[%s] Failed to detect MIME type for: %s - %s",
-                request_id,
-                filename,
-                str(mime_err),
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Errore durante l'analisi del tipo di file: {filename}",
-            ) from mime_err
-
-        expected_mime = MIME_MAPPING.get(ext)
-        if mime != expected_mime:
-            logger.warning(
-                "[%s] Rejected file with mismatched content type: %s. Expected: %s, Got: %s",
-                request_id,
-                filename,
-                expected_mime,
-                mime,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Il contenuto del file '{filename}' (rilevato: {mime}) non corrisponde all'estensione '{ext}' (atteso: {expected_mime}).",  # noqa: E501
-            )
-
-        # 5. Accumulate Total Size & store valid file data
         total_size += size
         validated_files_data.append((filename, contents))
-        logger.debug(
-            "[%s] File validation successful: %s (%d bytes, MIME: %s)",
-            request_id,
-            filename,
-            size,
-            mime,
-        )
 
     # --- Total Size Check ---
     if not validated_files_data and files:  # No files were validated, but files were provided
