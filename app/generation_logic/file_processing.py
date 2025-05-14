@@ -142,28 +142,20 @@ async def _validate_and_extract_files(
         try:
             contents = await f_obj.read()
         except Exception as async_read_err:
-            # Fallback – try synchronous read from underlying file object
-            logger.warning(
-                "[%s] Async read failed for %s, trying fallback: %s",
+            # If the primary async read fails, log the error and raise an HTTPException.
+            # This avoids the fallback logic that causes "seek of closed file" on Vercel,
+            # as the file stream is likely already compromised.
+            logger.error(
+                "[%s] Failed to read file content for %s during initial async read: %s",
                 request_id,
                 filename,
                 str(async_read_err),
+                exc_info=True,
             )
-            try:
-                if hasattr(f_obj.file, "seek"):
-                    f_obj.file.seek(0)
-                contents = f_obj.file.read()
-            except Exception as sync_read_err:
-                logger.error(
-                    "[%s] Fallback read failed for %s: %s",
-                    request_id,
-                    filename,
-                    str(sync_read_err),
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Impossibile leggere '{filename}': {sync_read_err}",
-                ) from sync_read_err
+            raise HTTPException(
+                status_code=400,
+                detail=f"Impossibile leggere '{filename}': errore di accesso al contenuto.",
+            ) from async_read_err
 
         size = len(contents)
 
