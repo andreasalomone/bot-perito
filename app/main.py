@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi import Request
+from fastapi import status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,6 +51,11 @@ async def llm_exception_handler(_request: Request, exc: LLMError) -> JSONRespons
 @app.exception_handler(JSONParsingError)
 async def jsonparsing_exception_handler(_request: Request, exc: JSONParsingError) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])
+async def health_check() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 app.add_middleware(

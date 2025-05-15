@@ -17,7 +17,7 @@ export const getApiUrl = (endpoint) => {
     return `http://localhost:8000/api/${endpoint}`;
   }
   // Per produzione: punta al backend Render
-  return `https://aiperito.onrender.com/api/${endpoint}`;
+  return `https://aiperito.onrender.com/${endpoint}`;
 };
 
 const handleApiErrorResponse = async (response) => {
