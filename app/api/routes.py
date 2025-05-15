@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
@@ -37,20 +38,17 @@ def handle_docx_generation_errors(func: Callable) -> Callable:
     """Decorator to handle common errors during DOCX generation endpoints."""
 
     @wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> StreamingResponse:
-        # Extract request_id, assuming it's generated within the decorated function
-        # or passed explicitly. If not standard, this might need adjustment.
-        # For simplicity, we'll generate one if not obvious from args/kwargs.
-        # A better approach might be to pass it explicitly or extract from a request object if available.
+    async def wrapper(request: Request, *args: Any, **kwargs: Any) -> StreamingResponse:
+        # Generate request_id and store in request.state
         request_id = str(uuid4())
-        kwargs["request_id"] = request_id  # Inject into kwargs for the decorated function
+        request.state.request_id = request_id
 
         try:
-            return await func(*args, **kwargs)
+            return await func(request, *args, **kwargs)
         except DocBuilderError as e:
             logger.error(
                 "[%s] DocBuilderError during DOCX generation: %s",
-                request_id,
+                request.state.request_id,
                 str(e),
                 exc_info=True,
             )
@@ -69,23 +67,25 @@ def handle_docx_generation_errors(func: Callable) -> Callable:
 
             logger.error(
                 "[%s] PipelineError during DOCX generation (status %d): %s",
-                request_id,
+                request.state.request_id,
                 status_code,
                 error_msg,
                 exc_info=False,  # Details should be logged where the error originated
             )
             raise HTTPException(status_code=status_code, detail=error_msg) from e
         except Exception as e:
+            # Ensure request_id is available even if request.state access fails early
+            final_request_id = getattr(request.state, "request_id", "unknown")
             logger.error(
                 "[%s] Unexpected error during DOCX generation: %s",
-                request_id,
+                final_request_id,
                 str(e),
                 exc_info=True,
             )
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"An unexpected server error occurred during report generation (trace: {request_id})."  # Provide trace ID
+                    f"An unexpected server error occurred during report generation (trace: {final_request_id})."  # Provide trace ID
                 ),
             ) from e
 
@@ -169,7 +169,10 @@ async def generate(
 
 @router.post("/generate-with-clarifications", dependencies=[Depends(verify_api_key)])
 @handle_docx_generation_errors
-async def generate_with_clarifications(payload: ClarificationPayload, **kwargs: Any) -> StreamingResponse:
+async def generate_with_clarifications(
+    request: Request,
+    payload: ClarificationPayload,
+) -> StreamingResponse:
     """Receives user clarifications, runs the full report generation pipeline,
     and returns the final DOCX document directly.
 
@@ -177,6 +180,7 @@ async def generate_with_clarifications(payload: ClarificationPayload, **kwargs: 
     `clarification_needed` event.
 
     Args:
+        request (Request): FastAPI request object containing state.
         payload (ClarificationPayload): Contains user answers (`clarifications`)
                                         and original request artifacts.
 
@@ -190,10 +194,7 @@ async def generate_with_clarifications(payload: ClarificationPayload, **kwargs: 
             - 413: Input too large (e.g., text content exceeds limits).
             - 500: Internal server error during pipeline execution or DOCX generation.
     """
-    request_id = kwargs.get("request_id")
-    if not request_id:
-        request_id = str(uuid4())
-        logger.warning("[%s] request_id was not found in kwargs for generate_with_clarifications, generated a new one.", request_id)
+    request_id = request.state.request_id
 
     logger.info("[%s] Processing clarifications and generating DOCX", request_id)
 
@@ -218,8 +219,8 @@ async def generate_with_clarifications(payload: ClarificationPayload, **kwargs: 
 @router.post("/finalize-report", dependencies=[Depends(verify_api_key)])
 @handle_docx_generation_errors
 async def finalize_report(
+    request: Request,
     final_ctx_payload: ReportContext,  # Now expects ReportContext directly
-    **kwargs: Any,
 ) -> StreamingResponse:
     """Generates the final DOCX report from the provided context data.
 
@@ -227,6 +228,7 @@ async def finalize_report(
     a `data` event containing the complete report context.
 
     Args:
+        request (Request): FastAPI request object containing state.
         final_ctx_payload (ReportContext): The final report context data.
 
     Returns:
@@ -238,10 +240,7 @@ async def finalize_report(
             - 403: Invalid API Key.
             - 500: Internal server error during DOCX generation.
     """
-    request_id = kwargs.get("request_id")
-    if not request_id:
-        request_id = str(uuid4())
-        logger.warning("[%s] request_id was not found in kwargs for finalize_report, generated a new one.", request_id)
+    request_id = request.state.request_id
 
     logger.info("[%s] Initiating report finalization and DOCX generation.", request_id)
 

@@ -24,6 +24,7 @@ const handleApiErrorResponse = async (response) => {
   let errorMsg = `Errore del server: ${response.status}`;
   const responseText = await response.text();
   try {
+    const errorData = JSON.parse(responseText.trim());
     if (errorData.details && Array.isArray(errorData.details)) {
       // Format Pydantic errors for better readability
       errorMsg = `Errore di validazione:\n${errorData.details.map(
