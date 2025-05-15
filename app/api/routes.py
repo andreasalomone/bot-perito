@@ -169,10 +169,7 @@ async def generate(
 
 @router.post("/generate-with-clarifications", dependencies=[Depends(verify_api_key)])
 @handle_docx_generation_errors
-async def generate_with_clarifications(
-    payload: ClarificationPayload,
-    request_id: str,  # Injected by decorator
-) -> StreamingResponse:
+async def generate_with_clarifications(payload: ClarificationPayload, **kwargs: Any) -> StreamingResponse:
     """Receives user clarifications, runs the full report generation pipeline,
     and returns the final DOCX document directly.
 
@@ -182,7 +179,6 @@ async def generate_with_clarifications(
     Args:
         payload (ClarificationPayload): Contains user answers (`clarifications`)
                                         and original request artifacts.
-        request_id (str): Automatically injected request ID for logging.
 
     Returns:
         StreamingResponse: The generated DOCX report file as an attachment.
@@ -194,6 +190,11 @@ async def generate_with_clarifications(
             - 413: Input too large (e.g., text content exceeds limits).
             - 500: Internal server error during pipeline execution or DOCX generation.
     """
+    request_id = kwargs.get("request_id")
+    if not request_id:
+        request_id = str(uuid4())
+        logger.warning("[%s] request_id was not found in kwargs for generate_with_clarifications, generated a new one.", request_id)
+
     logger.info("[%s] Processing clarifications and generating DOCX", request_id)
 
     # build_report_with_clarifications returns a ReportContext instance directly.
@@ -218,7 +219,7 @@ async def generate_with_clarifications(
 @handle_docx_generation_errors
 async def finalize_report(
     final_ctx_payload: ReportContext,  # Now expects ReportContext directly
-    request_id: str,  # Injected by decorator
+    **kwargs: Any,
 ) -> StreamingResponse:
     """Generates the final DOCX report from the provided context data.
 
@@ -227,7 +228,6 @@ async def finalize_report(
 
     Args:
         final_ctx_payload (ReportContext): The final report context data.
-        request_id (str): Automatically injected request ID for logging.
 
     Returns:
         StreamingResponse: The generated DOCX report file as an attachment.
@@ -238,6 +238,11 @@ async def finalize_report(
             - 403: Invalid API Key.
             - 500: Internal server error during DOCX generation.
     """
+    request_id = kwargs.get("request_id")
+    if not request_id:
+        request_id = str(uuid4())
+        logger.warning("[%s] request_id was not found in kwargs for finalize_report, generated a new one.", request_id)
+
     logger.info("[%s] Initiating report finalization and DOCX generation.", request_id)
 
     template_path_str = str(settings.template_path)
