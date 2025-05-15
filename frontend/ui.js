@@ -11,6 +11,7 @@ let activeRequestArtifacts = null; // Variable to store requestArtifacts
 export const form = document.getElementById('frm');
 export const spinner = document.getElementById('spin');
 export const statusMessageElement = document.getElementById('status-message');
+export const staticSpinnerMessage = spinner ? spinner.querySelector('p:not(#status-message)') : null;
 export const fileInput = form.querySelector('input[type="file"][name="files"]');
 export const submitButton = form.querySelector('button[type="submit"]');
 export const apiKeyInput = document.getElementById('api_key');
@@ -29,17 +30,25 @@ export const enableSubmitButton = () => {
 // --- Spinner Management ---
 
 export const showSpinner = () => {
-  if (spinner) spinner.style.display = 'block';
+  if (statusMessageElement) statusMessageElement.textContent = 'Avvio procedura...'; // Initial dynamic message
+  if (staticSpinnerMessage) staticSpinnerMessage.style.display = 'block'; // Show the static message
+  if (spinner) spinner.style.display = 'flex'; // Use flex for centering
 };
 
 export const hideSpinner = () => {
   if (spinner) spinner.style.display = 'none';
+  if (statusMessageElement) statusMessageElement.textContent = '';
+  // Optionally hide the static message too, or let it be hidden by spinner display:none
+  // if (staticSpinnerMessage) staticSpinnerMessage.style.display = 'none';
 };
 
 // --- Status Messages ---
 
 export const updateStatus = (message) => {
-  if (statusMessageElement) statusMessageElement.textContent = message;
+  if (statusMessageElement) {
+    statusMessageElement.textContent = message;
+    if (staticSpinnerMessage) staticSpinnerMessage.style.display = 'block'; // Ensure static is visible
+  }
   console.log('Status Update:', message);
 };
 

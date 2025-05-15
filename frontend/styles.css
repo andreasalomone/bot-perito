@@ -131,7 +131,7 @@ button:active {
 
 #spin {
   display: none; /* Initially hidden */
-  flex-direction: column;
+  flex-direction: column; /* Ensures spinner and text are stacked */
   align-items: center;
   justify-content: center;
   margin: 2rem auto;
@@ -145,16 +145,19 @@ button:active {
 
 #spin p {
   margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem; /* Slightly less for tighter look */
   max-width: 100%;
-  font-size: 1em;
   color: var(--text-muted);
+}
+
+#spin p:first-of-type {
+  font-size: 1em; /* Or adjust as needed */
 }
 
 #spin p#status-message {
   font-size: 0.9em;
-  margin-top: 10px; /* Restored margin */
-  color: var(--text-muted); /* Use CSS variable */
+  font-weight: bold; /* Make dynamic status slightly more prominent */
+  min-height: 1.2em; /* Prevent layout jump if text is cleared */
 }
 
 @keyframes spinner {

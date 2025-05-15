@@ -58,7 +58,7 @@ class PipelineService:
             yield json.dumps(
                 {
                     "type": "status",
-                    "message": "Initializing report generation...",
+                    "message": "Inizializzazione generazione report...",
                 }
             )
 
@@ -73,7 +73,7 @@ class PipelineService:
             yield json.dumps(
                 {
                     "type": "status",
-                    "message": "Generating report outline...",
+                    "message": "Generazione outline del report...",
                 }
             )
             # 1. Outline - Use OutlineService
@@ -82,12 +82,6 @@ class PipelineService:
             logger.info(
                 f"[{request_id}] Pipeline substep 'generate_outline' (LLM) took {time.perf_counter() - start_outline_time:.2f}s"
             )
-            yield json.dumps(
-                {
-                    "type": "status",
-                    "message": f"Outline generated with {len(outline)} sections.",
-                }
-            )
 
             # Context dictionary preparation is still useful here
             # for passing necessary data between steps if needed, but primarily for expansion
@@ -95,7 +89,7 @@ class PipelineService:
             yield json.dumps(
                 {
                     "type": "status",
-                    "message": "Expanding report sections...",
+                    "message": "Espansione sezioni del report...",
                 }
             )
             # 3. Espandi sezioni - Use SectionExpansionService
@@ -104,7 +98,7 @@ class PipelineService:
                 yield json.dumps(
                     {
                         "type": "status",
-                        "message": f"Expanding section {i + 1}/{len(outline)}: {sec_outline_item.title}...",
+                        "message": f"Espansione sezione {i + 1}/{len(outline)}: {sec_outline_item.title}...",
                     }
                 )
                 # Call the SectionExpansionService method
@@ -122,17 +116,11 @@ class PipelineService:
                     f"{time.perf_counter() - start_expand_section_time:.2f}s"
                 )
                 sections[sec_outline_item.section] = text
-                yield json.dumps(
-                    {
-                        "type": "status",
-                        "message": f"Section '{sec_outline_item.title}' expanded.",
-                    }
-                )
 
             yield json.dumps(
                 {
                     "type": "status",
-                    "message": "Harmonizing report content...",
+                    "message": "Armonizzazione contenuto del report...",
                 }
             )
             # 4. Armonizza - Use HarmonizationService
@@ -140,12 +128,6 @@ class PipelineService:
             harmonized_sections_dict = await self.harmonization_service.harmonize(request_id, sections, reference_style_text)
             logger.info(
                 f"[{request_id}] Pipeline substep 'harmonize' (LLM) took {time.perf_counter() - start_harmonize_time:.2f}s"
-            )
-            yield json.dumps(
-                {
-                    "type": "status",
-                    "message": "Content harmonization complete.",
-                }
             )
 
             logger.info("[%s] Pipeline completed successfully", request_id)

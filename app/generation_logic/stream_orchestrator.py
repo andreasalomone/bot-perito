@@ -159,27 +159,22 @@ async def _stream_report_generation_logic(
         start_step_time = time.perf_counter()
         reference_style_text = await _helper_load_styles()
         logger.info(f"[{request_id}] Step 'load_styles' took {time.perf_counter() - start_step_time:.2f}s")
-        yield _create_stream_event("status", message="Stylistic references loaded.")
+        yield _create_stream_event("status", message="Caricamento riferimenti stilistici...")
 
         # 1. Validate & extract content
-        yield _create_stream_event("status", message="Validating inputs and extracting content…")
+        yield _create_stream_event("status", message="Validazione input ed estrazione contenuti...")
         start_step_time = time.perf_counter()
         corpus = await _helper_validate_and_extract(files, request_id)
         logger.info(f"[{request_id}] Step 'validate_and_extract' took {time.perf_counter() - start_step_time:.2f}s")
-        yield _create_stream_event(
-            "status",
-            message=f"Content extracted: {len(corpus)} chars.",
-        )
 
         # 2. Template excerpt
-        yield _create_stream_event("status", message="Loading template excerpt…")
+        yield _create_stream_event("status", message="Caricamento struttura template...")
         start_step_time = time.perf_counter()
         template_excerpt = await _helper_load_template_excerpt(template_path_str, request_id)
         logger.info(f"[{request_id}] Step 'load_template_excerpt' took {time.perf_counter() - start_step_time:.2f}s")
-        yield _create_stream_event("status", message="Template excerpt loaded.")
 
         # 3. Base context via LLM
-        yield _create_stream_event("status", message="Extracting base document context (LLM)…")
+        yield _create_stream_event("status", message="Estrazione contesto base (LLM)...")
         start_step_time = time.perf_counter()
         base_ctx = await _helper_extract_base_context(
             template_excerpt,
@@ -189,7 +184,6 @@ async def _stream_report_generation_logic(
             reference_style_text,
         )
         logger.info(f"[{request_id}] Step 'extract_base_context' (LLM) took {time.perf_counter() - start_step_time:.2f}s")
-        yield _create_stream_event("status", message="Base document context extracted.")
 
         # 4. Clarification step
         missing_info_list, request_artifacts_data = _helper_clarification_check(
@@ -211,7 +205,7 @@ async def _stream_report_generation_logic(
 
         yield _create_stream_event(
             "status",
-            message="No immediate clarifications needed. Starting main report generation pipeline…",
+            message="Avvio pipeline principale di generazione report...",
         )
 
         # 5. Streaming pipeline
@@ -230,7 +224,7 @@ async def _stream_report_generation_logic(
                     section_map_from_pipeline = update_data.get("payload")
                     yield _create_stream_event(
                         "status",
-                        message="Core content generation complete. Finalising report data…",
+                        message="Finalizzazione dati del report...",
                     )
                 elif update_data.get("type") == "error":
                     logger.error(
@@ -257,7 +251,7 @@ async def _stream_report_generation_logic(
                 )
                 yield _create_stream_event(
                     "status",
-                    message="Processing report sections (received non-JSON update)…",
+                    message="Elaborazione sezioni del report...",
                 )
         logger.info(f"[{request_id}] Step 'full_pipeline_run' took {time.perf_counter() - start_pipeline_time:.2f}s")
 
