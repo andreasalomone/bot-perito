@@ -127,6 +127,8 @@ form.addEventListener('submit', async (e) => {
             notes: notes,
         };
 
+        console.log("Payload being sent to /api/generate:", generatePayload);
+
         const generateApiUrl = getApiUrl(GENERATE_ENDPOINT);
         const generateResponse = await fetch(generateApiUrl, {
             method: 'POST',

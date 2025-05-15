@@ -5,10 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter
-from fastapi import File
-from fastapi import Form
 from fastapi import HTTPException
-from fastapi import UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
@@ -140,17 +137,11 @@ class GeneratePayloadS3(BaseModel):
 
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
 async def generate(
-    # Per il metodo S3 (payload JSON)
-    s3_payload: GeneratePayloadS3 | None = None,
-    # Per il metodo tradizionale con UploadFile (form-data)
-    files: list[UploadFile] | None = File(None, description="List of source documents (PDF, DOCX, JPG, PNG)."),  # noqa: B008
-    notes_form: str | None = Form(None, description="Optional free-text notes from the user (used with file uploads)."),
+    payload: GeneratePayloadS3,  # Expect GeneratePayloadS3 directly from JSON body
 ) -> StreamingResponse:
     """
-    Initiates the report generation process.
-    Accepts either:
-    1. A list of S3 keys and notes via a JSON payload.
-    2. Uploaded files (multipart/form-data) and optional notes.
+    Initiates the report generation process using S3 keys.
+    Accepts a list of S3 keys and notes via a JSON payload.
     Streams back NDJSON events representing the generation progress.
 
     Potential Stream Events:
@@ -162,34 +153,16 @@ async def generate(
 
     Requires a valid API key via the 'X-API-Key' header.
     """
-    request_id = str(uuid4())  # Genera un ID per questa richiesta
+    request_id = str(uuid4())  # Generate a unique ID for this request
 
-    files_to_process: list[UploadFile] | list[str]
-    notes_to_use: str
+    logger.info(f"[{request_id}] /generate called with S3 keys. Count: {len(payload.s3_keys)}")
 
-    if s3_payload and s3_payload.s3_keys:
-        # Metodo S3: usa s3_keys e le note dal payload JSON
-        logger.info(f"[{request_id}] /generate called with S3 keys. Count: {len(s3_payload.s3_keys)}")
-        if files or notes_form:
-            logger.warning(f"[{request_id}] /generate called with S3 keys, but also received form-data. Ignoring form-data.")
-        files_to_process = s3_payload.s3_keys
-        notes_to_use = s3_payload.notes or ""
-    elif files:
-        # Metodo tradizionale: usa UploadFile e le note dal form
-        logger.info(f"[{request_id}] /generate called with UploadFile. Count: {len(files)}")
-        if s3_payload:  # Dovrebbe essere None se files è presente, ma per sicurezza
-            logger.warning(f"[{request_id}] /generate called with UploadFile, but also received s3_payload. Ignoring s3_payload.")
-        files_to_process = files
-        notes_to_use = notes_form or ""
-    else:
-        logger.error(f"[{request_id}] /generate called with no S3 keys and no files.")
-        raise HTTPException(status_code=400, detail="No S3 keys or files provided. Please provide one or the other.")
+    files_to_process = payload.s3_keys
+    notes_to_use = payload.notes or ""
 
-    # La logica di _stream_report_generation_logic ora riceve `files_to_process`
-    # che può essere List[UploadFile] o List[str].
-    # La funzione _validate_and_extract_files al suo interno gestirà i due casi.
+    # _stream_report_generation_logic is already designed to handle List[str] for s3_keys
     return StreamingResponse(
-        _stream_report_generation_logic(files_to_process, notes_to_use, request_id_override=request_id),  # Passa il request_id
+        _stream_report_generation_logic(files_to_process, notes_to_use, request_id_override=request_id),
         media_type="application/x-ndjson",
     )
 
