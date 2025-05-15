@@ -12,9 +12,12 @@ export class HandledApiError extends Error {
 }
 
 export const getApiUrl = (endpoint) => {
-  return window.location.hostname === 'localhost'
-    ? `http://localhost:8000/api/${endpoint}`
-    : `/api/${endpoint}`;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    // Per sviluppo locale, punta al backend FastAPI che esegui localmente
+    return `http://localhost:8000/api/${endpoint}`;
+  }
+  // Per produzione: punta al backend Render
+  return `https://aiperito.onrender.com/api/${endpoint}`;
 };
 
 const handleApiErrorResponse = async (response) => {
