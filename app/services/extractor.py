@@ -3,8 +3,10 @@ import io
 import logging
 from typing import BinaryIO
 
-import pandas as pd
+import openpyxl  # For .xlsx files
 import pdfplumber
+
+# docx for Word documents
 from docx import Document
 
 from app.core.config import settings
@@ -79,100 +81,115 @@ async def _image_handler(fname: str, f: BinaryIO, request_id: str) -> str:
 
 
 async def _excel_to_text(f: BinaryIO, filename: str) -> str:
-    """Extract data from all sheets of an Excel file and represent each as CSV-formatted text."""
-    logger.debug("Attempting to extract text from Excel file (as CSV): %s", filename)
+    """
+    Asynchronously extracts text from an Excel file by running sync extraction in a thread.
+    f: A binary file-like object.
+    filename: The original name of the file, used to determine .xlsx vs .xls.
+    """
     try:
         f.seek(0)
-        file_bytes = f.read()
-        excel_buffer = io.BytesIO(file_bytes)
+        file_bytes = f.read()  # Read the whole file into memory for the sync function
+        return await asyncio.to_thread(_sync_excel_extraction, file_bytes, filename)
+    except Exception as e:
+        # Log error from this async wrapper if reading bytes fails or thread call fails
+        logger.error("Async wrapper for Excel extraction failed for '%s': %s", filename, str(e), exc_info=True)
+        raise ExtractorError(f"Error during async processing of Excel file: {filename}") from e
 
-        def _sync_excel_to_csv_text(buffer: io.BytesIO, original_filename: str) -> str:
-            # Initialize an ExcelFile object to get sheet names
-            # This is generally more robust for handling various Excel quirks.
+
+def _sync_excel_extraction(file_bytes: bytes, filename: str) -> str:
+    """
+    Extracts data from all sheets of an Excel file (.xlsx or .xls)
+    and represents each as CSV-formatted text, delimited by markers.
+    Uses openpyxl for .xlsx and xlrd3 (if installed) for .xls.
+    """
+    logger.debug("Attempting to extract text from Excel file (using openpyxl/xlrd): %s", filename)
+    file_extension = filename.lower().split(".")[-1]
+    excel_buffer = io.BytesIO(file_bytes)
+    all_sheets_content: list[str] = []
+
+    try:
+        if file_extension == "xlsx":
+            workbook = openpyxl.load_workbook(excel_buffer, read_only=True, data_only=True)
+            for i, sheet_name in enumerate(workbook.sheetnames):
+                sheet = workbook[sheet_name]
+                sheet_lines: list[str] = [
+                    f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"
+                ]
+                if sheet.max_row == 0 and sheet.max_column == 0:  # Check if sheet is truly empty
+                    sheet_lines.append("(Sheet is empty)")
+                else:
+                    for row_tuple in sheet.iter_rows():
+                        # Ensure all cell values are converted to string, handling None
+                        row_values = [str(cell.value) if cell.value is not None else "" for cell in row_tuple]
+                        sheet_lines.append(",".join(row_values))
+
+                sheet_lines.append(f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---")
+                all_sheets_content.append("\n".join(sheet_lines))
+
+        elif file_extension == "xls":
             try:
-                xls = pd.ExcelFile(buffer)
-            except Exception as e_file:
-                logger.error(
-                    "Failed to open Excel file %s with pd.ExcelFile: %s. Attempting direct read.", original_filename, str(e_file)
-                )
-                # Fallback: try to read directly, assuming single sheet or pandas can handle it
-                buffer.seek(0)  # Reset buffer for direct read
+                # Try xlrd3 first, then fall back to xlrd if needed
                 try:
-                    # sheet_name=None reads all sheets into a dict of DataFrames
-                    df_dict = pd.read_excel(buffer, sheet_name=None, header=None)
-                    if not isinstance(df_dict, dict):  # If it's a single DataFrame
-                        df_dict = {"Sheet1": df_dict}  # Wrap it in a dict for consistent processing
-                except Exception as e_direct_read:
-                    logger.error("Direct read_excel also failed for %s: %s", original_filename, str(e_direct_read))
-                    raise ExtractorError(f"Could not read Excel file content: {original_filename}") from e_direct_read
-
-                # Create a mock ExcelFile-like structure for sheet names if direct read worked
-                class MockExcelFile:
-                    def __init__(self, sheets: dict[str, pd.DataFrame]) -> None:
-                        self.sheet_names: list[str] = list(sheets.keys())
-                        self._sheets: dict[str, pd.DataFrame] = sheets
-
-                    def parse(self, sheet_name: str, _header: int | None = None) -> pd.DataFrame:
-                        return self._sheets[sheet_name]
-
-                xls = MockExcelFile(df_dict)
-
-            all_sheets_csv_text = []
-
-            for i, sheet_name in enumerate(xls.sheet_names):
-                logger.debug("Processing sheet: '%s' (index %d) from file '%s'", sheet_name, i, original_filename)
-                try:
-                    # header=None ensures all rows are treated as data.
-                    # If your Excel files consistently have headers in the first row,
-                    # you might use header=0, but header=None is safer for unknown structures.
-                    df = xls.parse(sheet_name, header=None)
-
-                    if not df.empty:
-                        # Convert DataFrame to CSV string
-                        # index=False: Don't write DataFrame index.
-                        # header=False: Don't write a header row from pandas' perspective.
-                        # All rows from Excel will be data rows in the CSV string.
-                        # na_rep='': Represent missing values (NaN) as empty strings in CSV.
-                        csv_string = df.to_csv(index=False, header=False, na_rep="")
-
-                        sheet_csv_representation = (
-                            f"--- START EXCEL SHEET (File: {original_filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---\n"
-                            f"{csv_string.strip()}\n"  # .strip() to remove trailing newlines from to_csv if any
-                            f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---"
+                    from xlrd3 import XLRDError  # type: ignore
+                    from xlrd3 import open_workbook  # type: ignore
+                except ImportError:
+                    try:
+                        from xlrd import XLRDError  # type: ignore
+                        from xlrd import open_workbook  # type: ignore
+                    except ImportError:
+                        logger.warning(
+                            "Neither xlrd3 nor xlrd library is installed. Cannot process .xls files like '%s'. "
+                            "Please install 'xlrd3' to enable .xls support.",
+                            filename,
                         )
-                        all_sheets_csv_text.append(sheet_csv_representation)
+                        # Return a clear message instead of raising an error immediately
+                        return (
+                            f"--- ERROR: Processing .xls file '{filename}' requires 'xlrd3' library, which is not installed. ---"
+                        )
+            except Exception as e_import:
+                logger.error("Error importing xlrd modules: %s", str(e_import))
+                return f"--- ERROR: Processing .xls file '{filename}' encountered library import error: {e_import} ---"
+
+            try:
+                workbook = open_workbook(file_contents=file_bytes)  # xlrd uses file_contents
+                for i in range(workbook.nsheets):
+                    sheet = workbook.sheet_by_index(i)
+                    sheet_name = sheet.name
+                    xls_sheet_lines: list[str] = [
+                        f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"
+                    ]
+                    if sheet.nrows == 0 and sheet.ncols == 0:
+                        xls_sheet_lines.append("(Sheet is empty)")
                     else:
-                        logger.debug("Sheet: '%s' from file '%s' is empty.", sheet_name, original_filename)
-                        # Still useful to indicate an empty sheet was processed
-                        all_sheets_csv_text.append(
-                            f"--- START EXCEL SHEET (File: {original_filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---\n"
-                            f"(Sheet is empty)\n"
-                            f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---"
-                        )
-                except Exception as e_sheet:
-                    logger.error(
-                        "Failed to parse sheet '%s' from Excel file '%s': %s", sheet_name, original_filename, str(e_sheet)
-                    )
-                    all_sheets_csv_text.append(
-                        f"--- ERROR PROCESSING SHEET (File: {original_filename}, Sheet Name: {sheet_name}: {str(e_sheet)}) ---"
-                    )
+                        for row_idx in range(sheet.nrows):
+                            row_values = []
+                            for col_idx in range(sheet.ncols):
+                                cell_value = sheet.cell_value(row_idx, col_idx)
+                                row_values.append(str(cell_value) if cell_value is not None else "")
+                            xls_sheet_lines.append(",".join(row_values))
+                    xls_sheet_lines.append(f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---")
+                    all_sheets_content.append("\n".join(xls_sheet_lines))
+            except XLRDError as e_xlrd:  # Catch specific xlrd errors
+                logger.error("xlrd failed to parse .xls file '%s': %s", filename, str(e_xlrd))
+                raise ExtractorError(f"Failed to parse .xls file '{filename}' with xlrd: {e_xlrd}") from e_xlrd
 
-            final_text = "\n\n".join(all_sheets_csv_text)  # Separate CSV blocks for different sheets
-            logger.debug("Extracted %d chars (as CSVs) from Excel file: '%s'", len(final_text), original_filename)
-            return final_text
+        else:
+            logger.warning("Unsupported Excel extension for file: %s", filename)
+            raise ExtractorError(f"Unsupported Excel file type for: {filename}")
 
-        return await asyncio.to_thread(_sync_excel_to_csv_text, excel_buffer, filename)
-    except Exception as e:  # Catch any exception during file reading or initial buffer creation
-        logger.error("Failed to extract CSV text from Excel file '%s': %s", filename, str(e), exc_info=True)
-        raise ExtractorError(f"Failed to extract CSV text from Excel file: {filename}") from e
+        final_text = "\n\n".join(all_sheets_content)
+        logger.debug("Extracted %d chars (as CSVs) from Excel file: '%s'", len(final_text), filename)
+        return final_text
+
+    except Exception as e:  # Catch any other unexpected errors during processing
+        logger.error("Failed to extract text from Excel file '%s': %s", filename, str(e), exc_info=True)
+        raise ExtractorError(f"Failed to extract text from Excel file: {filename}") from e
 
 
 _HANDLERS = {
     "pdf": _pdf_to_text,
     "docx": _docx_to_text,
     "doc": _docx_to_text,
-    "xlsx": lambda f: _excel_to_text(f, "excel_file.xlsx"),  # Default filename if not provided
-    "xls": lambda f: _excel_to_text(f, "excel_file.xls"),  # Default filename if not provided
 }
 
 

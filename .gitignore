@@ -82,3 +82,8 @@ docs/
 
 # Development requirements
 requirements-dev.txt
+.pre-commit-config.yaml
+mypy.ini
+ruff.toml
+pytest.ini
+pyproject.toml
