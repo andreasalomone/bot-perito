@@ -79,59 +79,92 @@ async def _image_handler(fname: str, f: BinaryIO, request_id: str) -> str:
 
 
 async def _excel_to_text(f: BinaryIO, filename: str) -> str:
-    """Extract text from all cells in all sheets of an Excel file."""
-    logger.debug("Attempting to extract text from Excel file: %s", filename)
+    """Extract data from all sheets of an Excel file and represent each as CSV-formatted text."""
+    logger.debug("Attempting to extract text from Excel file (as CSV): %s", filename)
     try:
         f.seek(0)
         file_bytes = f.read()
-
-        # Use BytesIO to allow pandas to read from in-memory bytes
         excel_buffer = io.BytesIO(file_bytes)
 
-        def _sync_excel_extraction(buffer: io.BytesIO) -> str:
+        def _sync_excel_to_csv_text(buffer: io.BytesIO, original_filename: str) -> str:
+            # Initialize an ExcelFile object to get sheet names
+            # This is generally more robust for handling various Excel quirks.
             try:
-                # Read all sheets into a dictionary of DataFrames
-                # sheet_name=None reads all sheets
-                xls = pd.ExcelFile(buffer)  # More robust to try ExcelFile first
-                all_sheets_text = []
-                for sheet_name in xls.sheet_names:
-                    df = xls.parse(sheet_name, header=None)  # header=None to treat all rows as data
+                xls = pd.ExcelFile(buffer)
+            except Exception as e_file:
+                logger.error(
+                    "Failed to open Excel file %s with pd.ExcelFile: %s. Attempting direct read.", original_filename, str(e_file)
+                )
+                # Fallback: try to read directly, assuming single sheet or pandas can handle it
+                buffer.seek(0)  # Reset buffer for direct read
+                try:
+                    # sheet_name=None reads all sheets into a dict of DataFrames
+                    df_dict = pd.read_excel(buffer, sheet_name=None, header=None)
+                    if not isinstance(df_dict, dict):  # If it's a single DataFrame
+                        df_dict = {"Sheet1": df_dict}  # Wrap it in a dict for consistent processing
+                except Exception as e_direct_read:
+                    logger.error("Direct read_excel also failed for %s: %s", original_filename, str(e_direct_read))
+                    raise ExtractorError(f"Could not read Excel file content: {original_filename}") from e_direct_read
+
+                # Create a mock ExcelFile-like structure for sheet names if direct read worked
+                class MockExcelFile:
+                    def __init__(self, sheets: dict[str, pd.DataFrame]) -> None:
+                        self.sheet_names: list[str] = list(sheets.keys())
+                        self._sheets: dict[str, pd.DataFrame] = sheets
+
+                    def parse(self, sheet_name: str, _header: int | None = None) -> pd.DataFrame:
+                        return self._sheets[sheet_name]
+
+                xls = MockExcelFile(df_dict)
+
+            all_sheets_csv_text = []
+
+            for i, sheet_name in enumerate(xls.sheet_names):
+                logger.debug("Processing sheet: '%s' (index %d) from file '%s'", sheet_name, i, original_filename)
+                try:
+                    # header=None ensures all rows are treated as data.
+                    # If your Excel files consistently have headers in the first row,
+                    # you might use header=0, but header=None is safer for unknown structures.
+                    df = xls.parse(sheet_name, header=None)
+
                     if not df.empty:
-                        # Convert all cells to string and join them, then join rows
-                        # NaNs (empty cells) will become 'nan' string, filter them or handle as needed
-                        # We'll join with spaces between cells and newlines between rows.
-                        sheet_text = "\n".join(df.apply(lambda row: " ".join(row.astype(str).replace("nan", "")), axis=1))
-                        all_sheets_text.append(f"--- Sheet: {sheet_name} ---\n{sheet_text}")
+                        # Convert DataFrame to CSV string
+                        # index=False: Don't write DataFrame index.
+                        # header=False: Don't write a header row from pandas' perspective.
+                        # All rows from Excel will be data rows in the CSV string.
+                        # na_rep='': Represent missing values (NaN) as empty strings in CSV.
+                        csv_string = df.to_csv(index=False, header=False, na_rep="")
 
-                final_text = "\n\n".join(all_sheets_text)
-                logger.debug("Extracted %d chars from Excel file: %s", len(final_text), filename)
-                return final_text
-            except Exception as e_parse:
-                # Fallback if ExcelFile fails, or for simpler cases, direct read_excel
-                # This might be less robust for multi-sheet or complex files.
-                logger.warning("ExcelFile parsing failed for %s, attempting direct read_excel: %s", filename, e_parse)
-                buffer.seek(0)  # Reset buffer pointer
-                df = pd.read_excel(buffer, sheet_name=None, header=None)  # Try to read all sheets
-                if isinstance(df, dict):  # Multi-sheet case
-                    all_sheets_text = []
-                    for sheet_name, sheet_df in df.items():
-                        if not sheet_df.empty:
-                            sheet_text = "\n".join(
-                                sheet_df.apply(lambda row: " ".join(row.astype(str).replace("nan", "")), axis=1)
-                            )
-                            all_sheets_text.append(f"--- Sheet: {sheet_name} ---\n{sheet_text}")
-                    final_text = "\n\n".join(all_sheets_text)
-                elif not df.empty:  # Single sheet case
-                    final_text = "\n".join(df.apply(lambda row: " ".join(row.astype(str).replace("nan", "")), axis=1))
-                else:
-                    final_text = ""
-                logger.debug("Extracted %d chars via direct read_excel from Excel file: %s", len(final_text), filename)
-                return final_text
+                        sheet_csv_representation = (
+                            f"--- START EXCEL SHEET (File: {original_filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---\n"
+                            f"{csv_string.strip()}\n"  # .strip() to remove trailing newlines from to_csv if any
+                            f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---"
+                        )
+                        all_sheets_csv_text.append(sheet_csv_representation)
+                    else:
+                        logger.debug("Sheet: '%s' from file '%s' is empty.", sheet_name, original_filename)
+                        # Still useful to indicate an empty sheet was processed
+                        all_sheets_csv_text.append(
+                            f"--- START EXCEL SHEET (File: {original_filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---\n"
+                            f"(Sheet is empty)\n"
+                            f"--- END EXCEL SHEET (Sheet Name: {sheet_name}) ---"
+                        )
+                except Exception as e_sheet:
+                    logger.error(
+                        "Failed to parse sheet '%s' from Excel file '%s': %s", sheet_name, original_filename, str(e_sheet)
+                    )
+                    all_sheets_csv_text.append(
+                        f"--- ERROR PROCESSING SHEET (File: {original_filename}, Sheet Name: {sheet_name}: {str(e_sheet)}) ---"
+                    )
 
-        return await asyncio.to_thread(_sync_excel_extraction, excel_buffer)
-    except Exception as e:
-        logger.error("Failed to extract text from Excel file %s: %s", filename, str(e), exc_info=True)
-        raise ExtractorError(f"Failed to extract text from Excel file: {filename}") from e
+            final_text = "\n\n".join(all_sheets_csv_text)  # Separate CSV blocks for different sheets
+            logger.debug("Extracted %d chars (as CSVs) from Excel file: '%s'", len(final_text), original_filename)
+            return final_text
+
+        return await asyncio.to_thread(_sync_excel_to_csv_text, excel_buffer, filename)
+    except Exception as e:  # Catch any exception during file reading or initial buffer creation
+        logger.error("Failed to extract CSV text from Excel file '%s': %s", filename, str(e), exc_info=True)
+        raise ExtractorError(f"Failed to extract CSV text from Excel file: {filename}") from e
 
 
 _HANDLERS = {

@@ -4,6 +4,9 @@ PREDEFINED_STYLE_REFERENCE_TEXT = """
 **NOTA PER L'LLM:** Questo testo fornisce esempi di tono di voce, fraseggio e terminologia specifica. Utilizzalo come guida
 per scrivere il contenuto testuale dettagliato e professionale richiesto per popolare i vari campi informativi della perizia.
 La struttura generale del report e i campi specifici da compilare ti verranno indicati separatamente.
+**Il materiale documentale fornito potrebbe includere dati estratti da fogli di calcolo, presentati come testo in formato CSV
+(valori separati da virgole), delimitati da marcatori che indicano il file e il foglio di origine.
+Presta attenzione a questi blocchi per estrarre informazioni tabellari o quantitative.**
 
 **1. Tono di Voce Generale:**
     *   **Professionale e Autorevole:** Mantieni un registro formale, preciso, oggettivo e altamente dettagliato.
