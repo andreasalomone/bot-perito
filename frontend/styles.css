@@ -1,163 +1,208 @@
-/* Modern dark theme with shadcn-inspired design */
+/* styles.css - Apple/OpenAI Inspired Dark Theme */
 :root {
-  --font-sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --primary-color: #6D28D9;
-  --primary-hover: #7C3AED;
-  --background-color: #09090B;
-  --card-background: #18181B;
-  --text-color: #E4E4E7;
-  --text-muted: #A1A1AA;
-  --border-color: #27272A;
-  --ring-color: rgba(109, 40, 217, 0.3);
+  /* Typography - Apple's SF Pro stack */
+  --font-family-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* Core Palette - Inspired by OpenAI/Modern Dark UI */
+  --color-background: #171717; /* Slightly off-black, common in modern dark UIs */
+  --color-surface: #212121; /* For cards, inputs - a bit lighter than bg */
+  --color-surface-hover: #2c2c2c; /* Subtle hover for interactive surfaces */
+  --color-border: #363636; /* Softer borders */
+  --color-border-interactive: #4f4f4f; /* Border for focused/hovered inputs */
+
+  /* Text Palette */
+  --color-text-primary: #e0e0e0; /* Main text - not pure white, softer */
+  --color-text-secondary: #a0a0a0; /* Muted text for labels, hints */
+  --color-text-placeholder: #757575; /* Placeholder text */
+
+  /* Accent Palette - Let's choose a vibrant but not overpowering blue, common in tech */
+  --color-accent: #007aff; /* Apple's system blue */
+  --color-accent-hover: #0056b3; /* Darker shade for hover */
+  --color-accent-text: #ffffff; /* Text on accent backgrounds */
+
+  /* Focus Ring */
+  --color-focus-ring: rgba(0, 122, 255, 0.4); /* Translucent version of accent */
+
+  /* UI Elements */
+  --border-radius-medium: 0.625rem; /* 10px - common in modern UI */
+  --border-radius-large: 0.875rem; /* 14px */
+  --transition-duration: 0.2s;
+  --box-shadow-soft: 0 2px 4px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.08); /* Softer shadow */
 }
 
-.file-input,
-textarea {
-  box-sizing: border-box;   /* <— this is the fix */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  font-family: var(--font-sf);
-  background-color: var(--background-color);
-  color: var(--text-color);
+  font-family: var(--font-family-system);
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  margin: 0;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1rem; /* Add some padding for smaller viewports */
 }
 
 .container {
   width: 100%;
-  max-width: 800px;
-  padding: 2.5rem;
-  background: var(--card-background);
-  border-radius: 1rem;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  max-width: 720px; /* Slightly reduced for a more focused feel */
+  padding: 2.5rem 3rem; /* More horizontal padding */
+  background: var(--color-surface);
+  border-radius: var(--border-radius-large);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--box-shadow-soft);
 }
 
 h2 {
-  font-size: 2.25rem;
-  font-weight: 700;
-  margin-bottom: 2rem;
+  font-size: 1.875rem; /* 30px */
+  font-weight: 600; /* Slightly less heavy */
+  margin-bottom: 2.5rem;
   text-align: center;
-  color: var(--text-color);
-  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em; /* Subtle letter spacing */
 }
 
+/* Form Elements Styling */
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem; /* Increased spacing */
+  margin-top: 1.25rem; /* Increased spacing */
+  color: var(--color-text-secondary);
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500;
+}
+
+input[type="file"],
+input[type="password"],
+input[type="text"], /* For clarification inputs */
+textarea {
+  width: 100%;
+  background-color: var(--color-background); /* Inputs slightly darker than surface */
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-medium);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-system);
+  font-size: 1rem; /* 16px */
+  padding: 0.875rem 1rem; /* 14px 16px */
+  transition: border-color var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
+}
+
+input[type="file"]::file-selector-button { /* Style the "Choose File" button */
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-secondary);
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius-medium);
+    margin-right: 1rem;
+    cursor: pointer;
+    transition: background-color var(--transition-duration) ease;
+}
+input[type="file"]::file-selector-button:hover {
+    background-color: var(--color-border);
+}
+
+
+input[type="password"]:focus,
+input[type="text"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-focus-ring); /* Slightly larger focus ring */
+}
+
+textarea {
+  resize: vertical;
+  min-height: 120px; /* Slightly taller */
+  padding-top: 1rem; /* Ensure consistent padding with inputs */
+  padding-bottom: 1rem;
+}
+
+/* Custom File Input Area */
 .file-input-wrapper {
   width: 100%;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.5rem; /* Keep existing */
 }
 
-.file-input {
-  width: 100%;
-  padding: 2rem;
-  background: var(--background-color);
-  border: 2px dashed var(--border-color);
-  border-radius: 0.75rem;
-  color: var(--text-muted);
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.file-input:hover {
-  border-color: var(--primary-color);
-  background: rgba(109, 40, 217, 0.1);
+.file-input { /* This is the <input type="file"> itself */
+  /* We'll style it directly for a more modern look, replacing dashed border */
+  padding: 0.875rem 1rem; /* Consistent padding */
 }
 
 .file-size-limit {
   display: block;
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  line-height: 1.4;
+  margin-top: 0.625rem; /* 10px */
+  font-size: 0.8125rem; /* 13px */
+  color: var(--color-text-placeholder); /* Even more muted */
+  line-height: 1.5;
 }
 
-textarea {
+/* Buttons */
+button,
+.clarification-submit-button { /* Group common button styles */
   width: 100%;
-  padding: 1rem;
-  background: var(--background-color);
-  border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
-  color: var(--text-color);
-  font-family: var(--font-sf);
-  font-size: 1rem;
-  resize: vertical;
-  min-height: 100px;
-  transition: all 0.2s ease;
-}
-
-textarea:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px var(--ring-color);
-}
-
-button {
-  width: 100%;
-  background-color: var(--primary-color);
-  color: white;
+  background-color: var(--color-accent);
+  color: var(--color-accent-text);
   border: none;
-  border-radius: 0.75rem;
-  padding: 1rem 2rem;
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: var(--border-radius-medium);
+  padding: 0.875rem 1.5rem; /* Consistent padding */
+  font-size: 1rem; /* 16px */
+  font-weight: 500; /* Medium weight, common for buttons */
   cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-button:hover {
-  background-color: var(--primary-hover);
-  transform: translateY(-1px);
-}
-
-button:active {
-  transform: translateY(0);
-}
-
-/* Add form label styles */
-.form-label {
-  display: block;
-  margin: 1rem 0 0.25rem;
-  color: var(--text-muted);
-  font-size: 0.9rem; /* Example: Adjust as needed */
-  font-weight: 500; /* Example: Adjust as needed */
-}
-
-#spin {
-  display: none; /* Initially hidden */
-  flex-direction: column; /* Ensures spinner and text are stacked */
+  transition: background-color var(--transition-duration) ease, transform var(--transition-duration) ease;
+  display: flex; /* For centering content if needed, e.g. icon + text */
   align-items: center;
   justify-content: center;
-  margin: 2rem auto;
+  text-align: center;
+}
+
+button:hover,
+.clarification-submit-button:hover {
+  background-color: var(--color-accent-hover);
+  transform: translateY(-1px); /* Subtle lift */
+}
+
+button:active,
+.clarification-submit-button:active {
+  transform: translateY(0);
+  background-color: var(--color-accent); /* Revert to base on active for a "pressed" feel */
+}
+
+button:disabled,
+.clarification-submit-button:disabled {
+    background-color: var(--color-border);
+    color: var(--color-text-placeholder);
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Spinner Area */
+#spin {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 2.5rem auto; /* Increased margin */
   padding: 1rem;
   text-align: center;
 }
 
-#spin .spinner {
-  margin-bottom: 1rem;
-}
-
-#spin p {
-  margin-top: 0.5rem;
-  margin-bottom: 0.25rem; /* Slightly less for tighter look */
-  max-width: 100%;
-  color: var(--text-muted);
-}
-
-#spin p:first-of-type {
-  font-size: 1em; /* Or adjust as needed */
-}
-
-#spin p#status-message {
-  font-size: 0.9em;
-  font-weight: bold; /* Make dynamic status slightly more prominent */
-  min-height: 1.2em; /* Prevent layout jump if text is cleared */
+.spinner {
+  width: 36px; /* Slightly smaller */
+  height: 36px;
+  border: 3px solid var(--color-border); /* Base ring */
+  border-top-color: var(--color-accent); /* Spinning part with accent */
+  border-radius: 50%;
+  animation: spinner 0.7s linear infinite; /* Slightly faster */
+  margin-bottom: 1.25rem; /* More space below spinner */
 }
 
 @keyframes spinner {
@@ -165,111 +210,96 @@ button:active {
   100% { transform: rotate(360deg); }
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--border-color);
-  border-top: 3px solid var(--primary-color);
-  border-radius: 50%;
-  animation: spinner 0.8s linear infinite;
+#spin p {
+  color: var(--color-text-secondary);
+  margin-bottom: 0.375rem; /* 6px */
 }
 
-/* Responsive design */
-@media (max-width: 768px) {
-  .container {
-    width: 95%;
-    padding: 1.5rem;
-  }
-
-  h2 {
-    font-size: 1.875rem;
-  }
+#spin p:first-of-type { /* "Attendere prego..." */
+  font-size: 0.9375rem; /* 15px */
 }
 
-/* Styles for API Key Input */
-#api_key {
-  width: 100%;
-  padding: 1rem;
-  background: var(--background-color);
-  border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
-  color: var(--text-color);
-  font-size: 1rem;
-  margin-bottom: 1.5rem;
-  box-sizing: border-box; /* Ensure padding doesn't increase size */
+#spin p#status-message { /* Dynamic status */
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500; /* Medium weight for better readability */
+  min-height: 1.3em; /* Prevent layout jump */
+  color: var(--color-text-primary); /* Slightly more prominent than the static P */
 }
 
-#api_key:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px var(--ring-color);
-}
 
-/* Styles for Clarification UI */
+/* Clarification UI Styling */
 #clarification-ui {
-  display: none; /* Initially hidden */
-  margin-top: 2rem;
-  padding: 1.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
-  background-color: var(--background-color); /* Slightly different bg? */
+  display: none;
+  margin-top: 2.5rem;
+  padding: 2rem; /* More padding */
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-large);
+  background-color: var(--color-background); /* Slightly darker than main surface for differentiation */
 }
 
 .clarification-title {
-  font-size: 1.5rem;
+  font-size: 1.375rem; /* 22px */
   font-weight: 600;
-  margin-bottom: 1.5rem;
-  color: var(--text-color);
+  margin-bottom: 2rem; /* More space */
+  color: var(--color-text-primary);
+  text-align: left; /* Align to left for a more standard form feel */
 }
 
 .clarification-field-container {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem; /* More space between fields */
 }
 
-.clarification-label {
-  display: block;
-  margin-bottom: 0.35rem;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+.clarification-label { /* Already styled by .form-label, but can add specifics */
+  /* font-size: 0.8125rem; /* 13px if specific needed */
 }
 
-.clarification-input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  background-color: var(--card-background); /* Match container bg? */
-  color: var(--text-color);
-  font-size: 1rem;
-  box-sizing: border-box;
-}
-
-.clarification-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px var(--ring-color);
+.clarification-input { /* Uses general input styles */
+  /* Add specific overrides if needed */
 }
 
 .clarification-submit-button {
-  /* Reuse existing button styles by adding its class or defining here */
-  width: 100%;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 0.75rem;
-  padding: 0.75rem 1.5rem; /* Slightly smaller padding? */
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-top: 1rem;
+  margin-top: 2rem; /* More space above submit button */
 }
 
-.clarification-submit-button:hover {
-  background-color: var(--primary-hover);
-  transform: translateY(-1px);
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  body {
+    padding: 0.5rem; /* Less padding on small screens */
+  }
+  .container {
+    width: auto; /* Allow it to shrink */
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+    padding: 2rem 1.5rem; /* Adjust padding */
+  }
+
+  h2 {
+    font-size: 1.625rem; /* 26px */
+  }
+
+  #clarification-ui {
+    padding: 1.5rem;
+  }
 }
 
-.clarification-submit-button:active {
-  transform: translateY(0);
+@media (max-width: 480px) {
+  .container {
+    padding: 1.5rem 1rem;
+  }
+  h2 {
+    font-size: 1.5rem; /* 24px */
+  }
+  .form-label, #spin p#status-message, .file-size-limit {
+    font-size: 0.8125rem; /* Smaller text on very small screens */
+  }
+  input[type="file"],
+  input[type="password"],
+  input[type="text"],
+  textarea,
+  button,
+  .clarification-submit-button {
+    font-size: 0.9375rem; /* 15px */
+    padding: 0.75rem 0.875rem;
+  }
 }
