@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     LLM_CONNECT_TIMEOUT: float = Field(default=10.0, description="LLM client connect timeout in seconds.")
     LLM_READ_TIMEOUT: float = Field(default=180.0, description="LLM client read timeout in seconds.")
 
+    aws_access_key_id: str | None = Field(default=None)
+    aws_secret_access_key: str | None = Field(default=None)
+    aws_region: str = Field(default="eu-north-1")  # Imposta la tua regione di default qui
+    s3_bucket_name: str | None = Field(default=None)
+    # TTL per i file su S3 (in ore), usato dal cleanup job S3. Diversoda cleanup_ttl per /tmp.
+    s3_cleanup_max_age_hours: int = Field(default=24)
+
     model_config = {
         "env_file": ".env",
         "protected_namespaces": ("settings_",),

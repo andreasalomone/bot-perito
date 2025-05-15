@@ -79,9 +79,7 @@ class PipelineService:
             # 1. Outline - Use OutlineService
             start_outline_time = time.perf_counter()
             outline = await self.outline_service.generate_outline(request_id, template_excerpt, corpus, notes)
-            logger.info(
-                f"[{request_id}] Pipeline substep 'generate_outline' (LLM) took {time.perf_counter() - start_outline_time:.2f}s"
-            )
+            logger.info(f"[{request_id}] Pipeline substep 'generate_outline' (LLM) took {time.perf_counter() - start_outline_time:.2f}s")
 
             # Context dictionary preparation is still useful here
             # for passing necessary data between steps if needed, but primarily for expansion
@@ -111,10 +109,7 @@ class PipelineService:
                     notes,  # Pass notes directly
                     reference_style_text,  # Pass styles directly
                 )
-                logger.info(
-                    f"[{request_id}] Pipeline substep 'expand_section: {sec_outline_item.title}' (LLM) took "
-                    f"{time.perf_counter() - start_expand_section_time:.2f}s"
-                )
+                logger.info(f"[{request_id}] Pipeline substep 'expand_section: {sec_outline_item.title}' (LLM) took {time.perf_counter() - start_expand_section_time:.2f}s")
                 sections[sec_outline_item.section] = text
 
             yield json.dumps(
@@ -126,9 +121,7 @@ class PipelineService:
             # 4. Armonizza - Use HarmonizationService
             start_harmonize_time = time.perf_counter()
             harmonized_sections_dict = await self.harmonization_service.harmonize(request_id, sections, reference_style_text)
-            logger.info(
-                f"[{request_id}] Pipeline substep 'harmonize' (LLM) took {time.perf_counter() - start_harmonize_time:.2f}s"
-            )
+            logger.info(f"[{request_id}] Pipeline substep 'harmonize' (LLM) took {time.perf_counter() - start_harmonize_time:.2f}s")
 
             logger.info("[%s] Pipeline completed successfully", request_id)
 

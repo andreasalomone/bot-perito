@@ -33,10 +33,7 @@ async def verify_api_key(key: str = Depends(api_key_header)) -> bool:
     if not settings.api_key:
         # Log a critical server-side issue if the API key is not configured.
         # Access will still be denied due to the mismatch, which is secure.
-        logger.critical(
-            "CRITICAL: API key security is enforced, but no API_KEY is configured "
-            "on the server. All API requests requiring this key will be denied."
-        )
+        logger.critical("CRITICAL: API key security is enforced, but no API_KEY is configured on the server. All API requests requiring this key will be denied.")
         # The check below will handle returning 403
 
     if not (settings.api_key and secrets.compare_digest(key, settings.api_key)):

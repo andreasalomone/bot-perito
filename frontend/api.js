@@ -11,9 +11,9 @@ export class HandledApiError extends Error {
   }
 }
 
-const getApiUrl = (endpoint) => {
+export const getApiUrl = (endpoint) => {
   return window.location.hostname === 'localhost'
-    ? `http://localhost:8000/${endpoint}`
+    ? `http://localhost:8000/api/${endpoint}`
     : `/api/${endpoint}`;
 };
 

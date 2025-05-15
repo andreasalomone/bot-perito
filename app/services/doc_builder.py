@@ -12,9 +12,7 @@ from uuid import uuid4
 from docx import Document
 from docxtpl import DocxTemplate
 
-from app.models.report_models import (  # Keep for potential future use or type hinting if context becomes more specific
-    ReportContext,
-)
+from app.models.report_models import ReportContext  # Keep for potential future use or type hinting if context becomes more specific
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -124,10 +122,7 @@ async def inject(template_path: str, context: ReportContext) -> bytes:
             tpl.save(bio)
             bio.seek(0)
             doc = Document(bio)
-            section_content_map = {
-                placeholder: getattr(report_context, ctx_key, "")
-                for placeholder, ctx_key in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items()
-            }
+            section_content_map = {placeholder: getattr(report_context, ctx_key, "") for placeholder, ctx_key in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items()}
             for p_raw in doc.paragraphs:
                 p = cast(ParagraphProtocol, p_raw)  # Cast to our Protocol type
                 current_text = p.text
@@ -136,11 +131,7 @@ async def inject(template_path: str, context: ReportContext) -> bytes:
                         content_string = section_content_map.get(tag, "")
                         style = p.style
                         p.clear()  # p is now properly typed
-                        paragraphs_to_insert = [
-                            t.strip()
-                            for t in (str(content_string) if content_string is not None else "").split("\n\n")
-                            if t.strip()
-                        ]
+                        paragraphs_to_insert = [t.strip() for t in (str(content_string) if content_string is not None else "").split("\n\n") if t.strip()]
                         if not paragraphs_to_insert:
                             p.add_run("")
                         else:

@@ -13,6 +13,7 @@ import asyncio
 import io
 import logging
 from pathlib import Path
+from typing import TypeVar
 from typing import cast
 
 import magic
@@ -27,12 +28,16 @@ from app.core.validation import MIME_MAPPING
 from app.services.extractor import ExtractorError
 from app.services.extractor import extract
 from app.services.extractor import guard_corpus
+from app.services.storage.s3_service import download_bytes
 
 __all__ = [
     "_validate_and_extract_files",
 ]
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+S = TypeVar("S")
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +154,7 @@ async def _validate_single_uploaded_file(f_obj: UploadFile, request_id: str) -> 
         )
         raise HTTPException(
             status_code=413,
-            detail=f"File '{filename}' troppo grande ({size // (1024 * 1024)}MB). "
-            f"Limite per file: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+            detail=f"File '{filename}' troppo grande ({size // (1024 * 1024)}MB). Limite per file: {MAX_FILE_SIZE // (1024 * 1024)}MB",
         )
     try:
         mime = await asyncio.to_thread(magic.from_buffer, contents, mime=True)
@@ -176,8 +180,7 @@ async def _validate_single_uploaded_file(f_obj: UploadFile, request_id: str) -> 
         )
         raise HTTPException(
             status_code=400,
-            detail=f"Il contenuto del file '{filename}' (rilevato: {mime}) "
-            f"non corrisponde all'estensione '{ext}' (atteso: {expected_mime}).",
+            detail=f"Il contenuto del file '{filename}' (rilevato: {mime}) non corrisponde all'estensione '{ext}' (atteso: {expected_mime}).",
         )
     logger.debug(
         "[%s] File validation successful: %s (%d bytes, MIME: %s)",
@@ -189,107 +192,147 @@ async def _validate_single_uploaded_file(f_obj: UploadFile, request_id: str) -> 
     return filename, contents
 
 
+# --- Nuovo Helper per scaricare da S3 e validare ---
+async def _download_and_validate_s3_file(key: str, request_id: str) -> tuple[str, bytes]:
+    """
+    Downloads a file from S3, validates its size and MIME type.
+    Returns (filename, file_bytes).
+    Raises HTTPException on failure.
+    """
+    logger.info(f"[{request_id}] Downloading and validating S3 key: {key}")
+
+    # download_bytes è una funzione sincrona, la chiamiamo in un thread separato
+    file_bytes = await asyncio.to_thread(download_bytes, key)
+
+    if file_bytes is None:
+        logger.error(f"[{request_id}] Failed to download S3 key: {key}")
+        raise HTTPException(status_code=404, detail=f"File {key} not found or download failed from S3.")
+
+    # A questo punto file_bytes non può essere None, quindi è bytes
+    bytes_data: bytes = cast(bytes, file_bytes)
+
+    filename = Path(key).name  # Estrae 'nomefile.ext' da 'uploads/uuid_nomefile.ext'
+
+    # Validazione dimensione
+    if len(bytes_data) > MAX_FILE_SIZE:
+        logger.warning(f"[{request_id}] S3 file {filename} too large: {len(bytes_data)} bytes")
+        raise HTTPException(status_code=413, detail=f"File {filename} from S3 is too large.")
+
+    # Validazione MIME type
+    try:
+        mime_type_detected = await asyncio.to_thread(magic.from_buffer, bytes_data, mime=True)
+    except Exception as e:
+        logger.error(f"[{request_id}] MIME detection failed for S3 file {filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"MIME type detection failed for S3 file {filename}.") from e
+
+    ext = Path(filename).suffix.lower()
+    expected_mime = MIME_MAPPING.get(ext)
+
+    if not expected_mime:  # Estensione non in MIME_MAPPING
+        logger.warning(f"[{request_id}] S3 file {filename} has an unmapped extension '{ext}'. Skipping strict MIME check for this file but proceeding with caution.")
+    elif mime_type_detected != expected_mime:
+        logger.warning(f"[{request_id}] S3 file {filename} MIME mismatch. Expected: {expected_mime}, Got: {mime_type_detected}")
+        raise HTTPException(status_code=400, detail=f"S3 file {filename} has incorrect content type. Expected {expected_mime}, got {mime_type_detected}.")
+
+    logger.info(f"[{request_id}] S3 file {filename} downloaded and validated successfully.")
+    return filename, bytes_data
+
+
 async def _validate_and_extract_files(
-    files: list[UploadFile],
+    files_input: list[UploadFile] | list[str],
     request_id: str,
 ) -> str:
     """Validate uploads (size, type, total size), then extract text corpus concurrently."""
     total_size = 0
-    validated_files_data: list[tuple[str, bytes]] = []  # To store (filename, content_bytes)
+    extracted_texts: list[str] = []
 
     # --- Pre-flight: max file count check ---
     from app.core.validation import MAX_FILES  # Local import to avoid circulars during tests
 
-    if len(files) > MAX_FILES:
-        logger.warning("[%s] Upload rejected: too many files (%d > %d)", request_id, len(files), MAX_FILES)
+    if len(files_input) > MAX_FILES:
+        logger.warning(f"[{request_id}] Upload rejected: too many files/keys ({len(files_input)} > {MAX_FILES})")
         raise HTTPException(
             status_code=413,
-            detail=f"Puoi caricare al massimo {MAX_FILES} file alla volta.",
+            detail=f"Puoi processare al massimo {MAX_FILES} file alla volta.",
         )
 
-    # --- Validation Loop ---
-    for f_obj in files:
-        filename, contents = await _validate_single_uploaded_file(f_obj, request_id)
-        size = len(contents)
-        total_size += size
-        validated_files_data.append((filename, contents))
+    # --- Validation and Content Retrieval Loop ---
+    processed_file_data: list[tuple[str, bytes]] = []
 
-    # --- Total Size Check ---
-    if not validated_files_data and files:  # No files were validated, but files were provided
-        logger.warning(
-            "[%s] No valid files found after validation, though files were submitted.",
-            request_id,
-        )
-        # This implies all files failed validation. The specific error would have been raised above.
-        # If we reach here, it's an unusual state, possibly if an empty `files` list was passed
-        # and not caught by FastAPI, or all files individually failed validation.
-        # Raising a generic error if no specific one was already raised.
-        raise HTTPException(
-            status_code=400,
-            detail="Nessun contenuto valido trovato nei file forniti.",
-        )
-
-    if total_size > MAX_TOTAL_SIZE:
-        logger.warning(
-            "[%s] Total upload size exceeds limit: %d bytes > %d bytes",
-            request_id,
-            total_size,
-            MAX_TOTAL_SIZE,
-        )
-        raise HTTPException(
-            status_code=413,
-            detail=f"La dimensione totale dei file ({total_size // (1024 * 1024)}MB) supera il limite di {MAX_TOTAL_SIZE // (1024 * 1024)}MB.",  # noqa: E501
-        )
-
-    logger.info(
-        "[%s] All file validations passed. Total size: %d bytes. Processing %d files.",
-        request_id,
-        total_size,
-        len(validated_files_data),
-    )
-
-    # --- Concurrent Extraction ---
-    texts_content: list[str] = []
-
-    if not validated_files_data:  # If no files were validated (e.g. empty initial list)
-        logger.info("[%s] No files to extract.", request_id)
+    if not files_input:
+        logger.info(f"[{request_id}] No files or S3 keys provided for processing.")
         return ""
 
-    tasks = [_extract_single_file(fname, request_id, f_content_bytes) for fname, f_content_bytes in validated_files_data]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # CASO 1: Input è una lista di chiavi S3 (stringhe)
+    if all(isinstance(f, str) for f in files_input):
+        logger.info(f"[{request_id}] Processing S3 keys: {files_input}")
+        s3_keys: list[str] = cast(list[str], files_input)
+        download_tasks = [_download_and_validate_s3_file(key, request_id) for key in s3_keys]
 
-    for result_item in results:
+        # Gather può sollevare eccezioni se una task fallisce e non ha return_exceptions=True
+        try:
+            results = await asyncio.gather(*download_tasks)  # Se una fallisce, gather fallisce
+            for filename, content_bytes in results:
+                processed_file_data.append((filename, content_bytes))
+                total_size += len(content_bytes)
+        except HTTPException as http_exc:  # Rilancia HTTPException da _download_and_validate_s3_file
+            raise http_exc
+        except Exception as e:
+            logger.error(f"[{request_id}] Unexpected error during S3 file download/validation batch: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Error processing one or more S3 files.") from e
+
+    # CASO 2: Input è una lista di UploadFile (logica esistente)
+    elif all(isinstance(f, UploadFile) for f in files_input):
+        logger.info(f"[{request_id}] Processing UploadFile objects.")
+        upload_files: list[UploadFile] = cast(list[UploadFile], files_input)
+        validation_tasks = [_validate_single_uploaded_file(f_obj, request_id) for f_obj in upload_files]
+        try:
+            results = await asyncio.gather(*validation_tasks)
+            for filename, content_bytes in results:
+                processed_file_data.append((filename, content_bytes))
+                total_size += len(content_bytes)
+        except HTTPException as http_exc:  # Rilancia HTTPException da _validate_single_uploaded_file
+            raise http_exc
+        except Exception as e:
+            logger.error(f"[{request_id}] Unexpected error during UploadFile validation batch: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Error validating one or more uploaded files.") from e
+    else:
+        logger.error(f"[{request_id}] Invalid input type for files_input: {type(files_input[0]) if files_input else 'empty list'}")
+        raise HTTPException(status_code=400, detail="Invalid file input. Expected list of S3 keys or uploaded files.")
+
+    # --- Total Size Check (dopo aver recuperato tutti i contenuti) ---
+    if total_size > MAX_TOTAL_SIZE:
+        logger.warning(f"[{request_id}] Total data size exceeds limit: {total_size} bytes > {MAX_TOTAL_SIZE} bytes")
+        raise HTTPException(status_code=413, detail=f"La dimensione totale dei file ({total_size // (1024 * 1024)}MB) supera il limite di {MAX_TOTAL_SIZE // (1024 * 1024)}MB.")
+
+    logger.info(f"[{request_id}] All data retrieved and validated. Total size: {total_size} bytes. Processing {len(processed_file_data)} items.")
+
+    # --- Concurrent Extraction (come prima, ma su processed_file_data) ---
+    if not processed_file_data:
+        logger.info(f"[{request_id}] No files to extract text from.")
+        return ""
+
+    extraction_tasks = [_extract_single_file(fname, request_id, f_content_bytes) for fname, f_content_bytes in processed_file_data]
+    # Using return_exceptions=True means the result can contain exceptions
+    # mypy: asyncio.gather with return_exceptions=True returns a list where each item can be either
+    # the expected result type (str | None) or an exception
+    extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+    for result_item in extraction_results:
         if isinstance(result_item, Exception):
-            # _extract_single_file raises ExtractorError or PipelineError
-            logger.error(
-                "[%s] Error during concurrent extraction for file: %s",
-                request_id,
-                str(result_item),
-                exc_info=(
-                    True
-                    if not isinstance(result_item, ExtractorError | PipelineError)
-                    else False  # ExtractorError and PipelineError are logged at source
-                ),
-            )
-            # Propagate as PipelineError to be handled by orchestrator
-            # Ensure the error message includes which file failed.
+            logger.error(f"[{request_id}] Error during concurrent text extraction: {result_item}", exc_info=True)  # exc_info per dettagli
+            # Scegli se propagare o loggare e continuare. Per ora propaghiamo.
+            # Potrebbe essere un ExtractorError o PipelineError già sollevato da _extract_single_file
             if isinstance(result_item, ExtractorError | PipelineError):
-                # If it's already one of our specific errors, re-raise with context
-                # The original error message in result_item should be descriptive enough
-                raise PipelineError(f"Error processing file: {str(result_item)}") from result_item
-            else:  # For truly unexpected exceptions from gather or the task itself
-                raise PipelineError(f"Unexpected error processing file: {str(result_item)}") from result_item
-        else:
-            assert not isinstance(result_item, Exception)  # Help Mypy with type narrowing
-            txt = cast(str | None, result_item)  # result_item is Optional[str]
-            if txt is not None:  # Ensure not None, could also check for non-empty string if needed
-                texts_content.append(txt)
+                raise result_item  # Rilancia l'errore specifico
+            raise PipelineError(f"Error extracting text from a file: {str(result_item)}") from result_item
 
-    corpus = guard_corpus("\\n\\n".join(texts_content), request_id)
+        # A questo punto, result_item non è un'eccezione, quindi deve essere str | None
+        # Use the cast function to tell mypy that this type is str | None
+        text_content = cast(str | None, result_item)
+        if text_content:
+            extracted_texts.append(text_content)
 
-    logger.info(
-        "[%s] Validation & Extraction complete. Corpus length: %d.",
-        request_id,
-        len(corpus),
-    )
+    corpus = guard_corpus("\\n\\n".join(extracted_texts), request_id)
+    logger.info(f"[{request_id}] Text extraction complete. Corpus length: {len(corpus)}.")
     return corpus

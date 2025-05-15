@@ -112,9 +112,7 @@ def _sync_excel_extraction(file_bytes: bytes, filename: str) -> str:
             workbook = openpyxl.load_workbook(excel_buffer, read_only=True, data_only=True)
             for i, sheet_name in enumerate(workbook.sheetnames):
                 sheet = workbook[sheet_name]
-                sheet_lines: list[str] = [
-                    f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"
-                ]
+                sheet_lines: list[str] = [f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"]
                 if sheet.max_row == 0 and sheet.max_column == 0:  # Check if sheet is truly empty
                     sheet_lines.append("(Sheet is empty)")
                 else:
@@ -138,14 +136,11 @@ def _sync_excel_extraction(file_bytes: bytes, filename: str) -> str:
                         from xlrd import open_workbook  # type: ignore
                     except ImportError:
                         logger.warning(
-                            "Neither xlrd3 nor xlrd library is installed. Cannot process .xls files like '%s'. "
-                            "Please install 'xlrd3' to enable .xls support.",
+                            "Neither xlrd3 nor xlrd library is installed. Cannot process .xls files like '%s'. Please install 'xlrd3' to enable .xls support.",
                             filename,
                         )
                         # Return a clear message instead of raising an error immediately
-                        return (
-                            f"--- ERROR: Processing .xls file '{filename}' requires 'xlrd3' library, which is not installed. ---"
-                        )
+                        return f"--- ERROR: Processing .xls file '{filename}' requires 'xlrd3' library, which is not installed. ---"
             except Exception as e_import:
                 logger.error("Error importing xlrd modules: %s", str(e_import))
                 return f"--- ERROR: Processing .xls file '{filename}' encountered library import error: {e_import} ---"
@@ -155,9 +150,7 @@ def _sync_excel_extraction(file_bytes: bytes, filename: str) -> str:
                 for i in range(workbook.nsheets):
                     sheet = workbook.sheet_by_index(i)
                     sheet_name = sheet.name
-                    xls_sheet_lines: list[str] = [
-                        f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"
-                    ]
+                    xls_sheet_lines: list[str] = [f"--- START EXCEL SHEET (File: {filename}, Sheet Index: {i}, Sheet Name: {sheet_name}) ---"]
                     if sheet.nrows == 0 and sheet.ncols == 0:
                         xls_sheet_lines.append("(Sheet is empty)")
                     else:

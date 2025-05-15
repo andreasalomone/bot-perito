@@ -261,9 +261,7 @@ def build_prompt(
     # --- blocco stile aggiuntivo (facoltativo) -----------------------------
     extra_styles = ""
     if reference_style_text:
-        extra_styles = (
-            f"\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n{reference_style_text}\\n>>>"
-        )
+        extra_styles = f"\\n\\nESEMPIO DI FORMATTAZIONE (SOLO PER TONO E STILE; IGNORA CONTENUTO):\\n<<<\\n{reference_style_text}\\n>>>"
 
     # --- eventuali immagini -------------------------------------------------
     # img_block = ""

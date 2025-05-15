@@ -60,8 +60,8 @@ async def _helper_load_styles() -> str:
 
 
 # --- Helper: File Validation & Extraction ---
-async def _helper_validate_and_extract(files: list[UploadFile], request_id: str) -> str:
-    return await _validate_and_extract_files(files, request_id)
+async def _helper_validate_and_extract(files_input: list[UploadFile] | list[str], request_id: str) -> str:
+    return await _validate_and_extract_files(files_input, request_id)
 
 
 # --- Helper: Template Excerpt Loading ---
@@ -70,9 +70,7 @@ async def _helper_load_template_excerpt(template_path_str: str, request_id: str)
 
 
 # --- Helper: Base Context LLM ---
-async def _helper_extract_base_context(
-    template_excerpt: str, corpus: str, notes: str, request_id: str, reference_style_text: str
-) -> dict:
+async def _helper_extract_base_context(template_excerpt: str, corpus: str, notes: str, request_id: str, reference_style_text: str) -> dict:
     return await _extract_base_context(template_excerpt, corpus, notes, request_id, reference_style_text)
 
 
@@ -109,9 +107,7 @@ def _helper_clarification_check(
 
 
 # --- Helper: Main Pipeline Execution ---
-async def _helper_run_pipeline(
-    request_id: str, template_excerpt: str, corpus: str, notes: str, reference_style_text: str
-) -> AsyncGenerator[str, None]:
+async def _helper_run_pipeline(request_id: str, template_excerpt: str, corpus: str, notes: str, reference_style_text: str) -> AsyncGenerator[str, None]:
     pipeline = PipelineService()
     async for pipeline_update_json_str in pipeline.run(
         request_id=request_id,
@@ -133,18 +129,15 @@ def _helper_merge_final_context(base_ctx: dict, section_map_from_pipeline: dict)
 # ---------------------------------------------------------------------------
 
 
-async def _stream_report_generation_logic(
-    files: list[UploadFile],
-    notes: str,
-) -> AsyncGenerator[str, None]:
+async def _stream_report_generation_logic(files_input: list[UploadFile] | list[str], notes: str, request_id_override: str | None = None) -> AsyncGenerator[str, None]:
     """Orchestrate the end-to-end report generation, yielding NDJSON events that
     clients can consume as a stream.
     """
-    request_id = str(uuid4())
+    request_id = request_id_override if request_id_override else str(uuid4())
     logger.info(
-        "[%s] Initiating streaming report generation: %d files",
+        "[%s] Initiating streaming report generation: %d files/keys",
         request_id,
-        len(files),
+        len(files_input),
     )
 
     original_notes = notes
@@ -164,7 +157,7 @@ async def _stream_report_generation_logic(
         # 1. Validate & extract content
         yield _create_stream_event("status", message="Validazione input ed estrazione contenuti...")
         start_step_time = time.perf_counter()
-        corpus = await _helper_validate_and_extract(files, request_id)
+        corpus = await _helper_validate_and_extract(files_input, request_id)
         logger.info(f"[{request_id}] Step 'validate_and_extract' took {time.perf_counter() - start_step_time:.2f}s")
 
         # 2. Template excerpt
@@ -186,9 +179,7 @@ async def _stream_report_generation_logic(
         logger.info(f"[{request_id}] Step 'extract_base_context' (LLM) took {time.perf_counter() - start_step_time:.2f}s")
 
         # 4. Clarification step
-        missing_info_list, request_artifacts_data = _helper_clarification_check(
-            base_ctx, corpus, notes, original_notes, template_excerpt, reference_style_text, request_id
-        )
+        missing_info_list, request_artifacts_data = _helper_clarification_check(base_ctx, corpus, notes, original_notes, template_excerpt, reference_style_text, request_id)
         if missing_info_list:
             logger.info(
                 "[%s] Clarification needed for %d fields.",

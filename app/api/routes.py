@@ -10,6 +10,8 @@ from fastapi import Form
 from fastapi import HTTPException
 from fastapi import UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
 
 from app.core.config import settings
 from app.core.exceptions import PipelineError
@@ -25,6 +27,7 @@ from app.models.report_models import ReportContext
 
 # Error classes re-used in endpoint-level exception handling --------------
 from app.services.doc_builder import DocBuilderError
+from app.services.storage.s3_service import create_presigned_put
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -97,18 +100,58 @@ def handle_docx_generation_errors(func: Callable) -> Callable:
 # top-level orchestration calls.
 
 
+@router.post(
+    "/presign",
+    dependencies=[Depends(verify_api_key)],  # MANTIENI LA SICUREZZA!
+    summary="Generate Presigned URL for S3 Upload",
+    tags=["S3 Upload"],  # Opzionale: per organizzare la documentazione Swagger/OpenAPI
+)
+def presign_upload_file(filename: str, content_type: str) -> dict[str, str]:
+    """
+    Generates a presigned URL that the client can use to upload a file directly to S3.
+    The client should make a PUT request to the returned URL with the file content
+    and the correct Content-Type header.
+    """
+    request_id = str(uuid4())  # Per logging
+    logger.info(f"[{request_id}] Presign request received for filename: {filename}, content_type: {content_type}")
+
+    if not filename or not content_type:
+        raise HTTPException(status_code=400, detail="Filename and content_type are required.")
+
+    # Genera una chiave univoca per S3, anteponendo "uploads/" come una cartella
+    # Esempio: uploads/qualcosa_di_unico_documento.pdf
+    s3_key = f"uploads/{uuid4()}_{filename.replace(' ', '_')}"  # Sostituisci spazi per sicurezza
+
+    presigned_url = create_presigned_put(key=s3_key, content_type=content_type)
+
+    if not presigned_url:
+        logger.error(f"[{request_id}] Failed to generate presigned URL for key: {s3_key}")
+        raise HTTPException(status_code=500, detail="Could not generate S3 presigned URL. Please check server logs.")
+
+    logger.info(f"[{request_id}] Presigned URL generated for key: {s3_key}")
+    return {"key": s3_key, "url": presigned_url}
+
+
+# Definisci un modello Pydantic per il nuovo payload JSON con S3 keys
+class GeneratePayloadS3(BaseModel):
+    s3_keys: list[str] = PydanticField(..., description="List of S3 keys for the files to process.")
+    notes: str | None = PydanticField(default="", description="Optional free-text notes from the user.")
+
+
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
 async def generate(
-    files: list[UploadFile] = File(  # noqa: B008
-        ..., description="List of source documents (PDF, DOCX, JPG, PNG)."
-    ),
-    notes: str = Form("", description="Optional free-text notes from the user."),
+    # Per il metodo S3 (payload JSON)
+    s3_payload: GeneratePayloadS3 | None = None,
+    # Per il metodo tradizionale con UploadFile (form-data)
+    files: list[UploadFile] | None = File(None, description="List of source documents (PDF, DOCX, JPG, PNG)."),  # noqa: B008
+    notes_form: str | None = Form(None, description="Optional free-text notes from the user (used with file uploads)."),
 ) -> StreamingResponse:
-    """Initiates the report generation process.
-
-    Accepts uploaded files and optional notes, then streams back NDJSON events
-    representing the generation progress. The stream includes status updates,
-    potential requests for clarification, or the final report context data.
+    """
+    Initiates the report generation process.
+    Accepts either:
+    1. A list of S3 keys and notes via a JSON payload.
+    2. Uploaded files (multipart/form-data) and optional notes.
+    Streams back NDJSON events representing the generation progress.
 
     Potential Stream Events:
     - `status`: Progress messages.
@@ -119,8 +162,34 @@ async def generate(
 
     Requires a valid API key via the 'X-API-Key' header.
     """
+    request_id = str(uuid4())  # Genera un ID per questa richiesta
+
+    files_to_process: list[UploadFile] | list[str]
+    notes_to_use: str
+
+    if s3_payload and s3_payload.s3_keys:
+        # Metodo S3: usa s3_keys e le note dal payload JSON
+        logger.info(f"[{request_id}] /generate called with S3 keys. Count: {len(s3_payload.s3_keys)}")
+        if files or notes_form:
+            logger.warning(f"[{request_id}] /generate called with S3 keys, but also received form-data. Ignoring form-data.")
+        files_to_process = s3_payload.s3_keys
+        notes_to_use = s3_payload.notes or ""
+    elif files:
+        # Metodo tradizionale: usa UploadFile e le note dal form
+        logger.info(f"[{request_id}] /generate called with UploadFile. Count: {len(files)}")
+        if s3_payload:  # Dovrebbe essere None se files è presente, ma per sicurezza
+            logger.warning(f"[{request_id}] /generate called with UploadFile, but also received s3_payload. Ignoring s3_payload.")
+        files_to_process = files
+        notes_to_use = notes_form or ""
+    else:
+        logger.error(f"[{request_id}] /generate called with no S3 keys and no files.")
+        raise HTTPException(status_code=400, detail="No S3 keys or files provided. Please provide one or the other.")
+
+    # La logica di _stream_report_generation_logic ora riceve `files_to_process`
+    # che può essere List[UploadFile] o List[str].
+    # La funzione _validate_and_extract_files al suo interno gestirà i due casi.
     return StreamingResponse(
-        _stream_report_generation_logic(files, notes),
+        _stream_report_generation_logic(files_to_process, notes_to_use, request_id_override=request_id),  # Passa il request_id
         media_type="application/x-ndjson",
     )
 
