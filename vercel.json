@@ -1,19 +1,10 @@
 {
     "version": 2,
-
     "builds": [
-      { "src": "app/main.py",  "use": "@vercel/python", "config": { "runtime": "python3.11", "maxDuration": 240, "memory": 1024 } },
       { "src": "frontend/**",  "use": "@vercel/static" }
     ],
-
     "routes": [
-      { "src": "/api/cleanup", "dest": "api/cleanup.py" },
-      { "src": "/api/(.*)", "dest": "app/main.py" },
       { "handle": "filesystem" },
       { "src": "/(.*)",        "dest": "/frontend/$1" }
-    ],
-
-    "crons": [
-      { "path": "/api/cleanup", "schedule": "0 0 * * *" }
     ]
-  }
+}
