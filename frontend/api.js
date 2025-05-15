@@ -24,13 +24,21 @@ const handleApiErrorResponse = async (response) => {
   let errorMsg = `Errore del server: ${response.status}`;
   const responseText = await response.text();
   try {
-    const errorData = JSON.parse(responseText);
-    errorMsg = errorData.detail || errorData.message || errorMsg;
+    if (errorData.details && Array.isArray(errorData.details)) {
+      // Format Pydantic errors for better readability
+      errorMsg = `Errore di validazione:\n${errorData.details.map(
+        err => `  - Campo '${err.loc.join('.') || 'N/A'}': ${err.msg} (input: ${JSON.stringify(err.input)})`
+      ).join('\n')}`;
+    } else {
+      errorMsg = errorData.detail || errorData.message || errorMsg; // Fallback for other errors
+    }
   } catch (jsonError) {
+    // If parsing fails, use the raw text or the status
     errorMsg = responseText || errorMsg;
+    console.warn("Could not parse error response as JSON:", responseText);
   }
-  showApiError(errorMsg);
-  throw new HandledApiError(errorMsg); // Throw specialized error
+  showApiError(errorMsg); // This function is in ui.js and should display the message
+  throw new HandledApiError(errorMsg);
 };
 
 export const fetchStream = async (endpoint, options) => {

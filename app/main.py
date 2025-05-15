@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi import status
@@ -19,6 +21,8 @@ setup_logging()
 
 app = FastAPI(title="Report-AI MVP")
 
+logger = logging.getLogger(__name__)
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -27,6 +31,8 @@ async def http_exception_handler(_request: Request, exc: StarletteHTTPException)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Log the detailed Pydantic validation errors to the server console
+    logger.error("Request validation failed: %s", exc.errors(), exc_info=False)
     return JSONResponse(
         {"error": "Input validation failed", "details": exc.errors()},
         status_code=422,
