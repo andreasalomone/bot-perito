@@ -24,13 +24,13 @@ logger = logging.getLogger(__name__)
 # e facilmente eseguibile come un task separato.
 AWS_ACCESS_KEY_ID_CLEANUP = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY_CLEANUP = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION_CLEANUP = os.getenv("AWS_REGION", "eu-west-1")
+AWS_REGION_CLEANUP = os.getenv("AWS_REGION", "eu-north-1")
 S3_BUCKET_NAME_CLEANUP = os.getenv("S3_BUCKET_NAME")
 # Il prefisso "uploads/" è una convenzione per dove vengono caricati i file temporanei
 S3_CLEANUP_PREFIX = os.getenv("S3_CLEANUP_PREFIX", "uploads/")
-# TTL per i file su S3 (in ore), default a 24 ore. Dovrebbe corrispondere
+# TTL per i file su S3 (in ore), default a 240 ore. Dovrebbe corrispondere
 # a settings.s3_cleanup_max_age_hours se vuoi consistenza, ma qui è indipendente.
-S3_MAX_AGE_HOURS_CLEANUP = int(os.getenv("S3_MAX_AGE_HOURS", "24"))
+S3_MAX_AGE_HOURS_CLEANUP = int(os.getenv("S3_MAX_AGE_HOURS", "240"))
 
 
 def get_s3_client_for_cleanup() -> boto3.client | None:

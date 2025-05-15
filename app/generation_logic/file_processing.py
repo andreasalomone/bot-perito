@@ -201,8 +201,8 @@ async def _download_and_validate_s3_file(key: str, request_id: str) -> tuple[str
     """
     logger.info(f"[{request_id}] Downloading and validating S3 key: {key}")
 
-    # download_bytes è una funzione sincrona, la chiamiamo in un thread separato
-    file_bytes = await asyncio.to_thread(download_bytes, key)
+    # download_bytes è una funzione asincrona, la awaitiamo direttamente
+    file_bytes = await download_bytes(key)
 
     if file_bytes is None:
         logger.error(f"[{request_id}] Failed to download S3 key: {key}")
