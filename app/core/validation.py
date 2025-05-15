@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Allowed file extensions and size limits
-ALLOWED_EXTENSIONS: set[str] = {".pdf", ".docx", ".png", ".jpg", ".jpeg"}
+ALLOWED_EXTENSIONS: set[str] = {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".xlsx", ".xls"}
 MAX_FILE_SIZE: int = 25 * 1024 * 1024  # 25 MB per file
 
 # Maximum number of files allowed in a single request
@@ -20,6 +20,8 @@ MAX_TOTAL_SIZE: int = 100 * 1024 * 1024  # 100 MB total upload limit
 MIME_MAPPING: dict[str, str] = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",

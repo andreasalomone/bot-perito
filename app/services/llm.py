@@ -97,7 +97,7 @@ def _should_retry_llm_call(retry_state: RetryCallState) -> bool:
     wait=wait_exponential(multiplier=1, min=2, max=10),
     stop=stop_after_attempt(3),
     retry=_should_retry_llm_call,
-)
+)  # type: ignore
 async def call_llm(prompt: str) -> str:
     request_id = str(uuid4())
     logger.info("[%s] Making LLM API call with model: %s", request_id, settings.model_id)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 
 # Import custom exceptions
@@ -76,7 +77,11 @@ class PipelineService:
                 }
             )
             # 1. Outline - Use OutlineService
+            start_outline_time = time.perf_counter()
             outline = await self.outline_service.generate_outline(request_id, template_excerpt, corpus, notes)
+            logger.info(
+                f"[{request_id}] Pipeline substep 'generate_outline' (LLM) took {time.perf_counter() - start_outline_time:.2f}s"
+            )
             yield json.dumps(
                 {
                     "type": "status",
@@ -103,6 +108,7 @@ class PipelineService:
                     }
                 )
                 # Call the SectionExpansionService method
+                start_expand_section_time = time.perf_counter()
                 text = await self.section_expansion_service.expand_section(
                     request_id,
                     sec_outline_item,
@@ -110,6 +116,10 @@ class PipelineService:
                     template_excerpt,  # Pass template_excerpt directly
                     notes,  # Pass notes directly
                     reference_style_text,  # Pass styles directly
+                )
+                logger.info(
+                    f"[{request_id}] Pipeline substep 'expand_section: {sec_outline_item.title}' (LLM) took "
+                    f"{time.perf_counter() - start_expand_section_time:.2f}s"
                 )
                 sections[sec_outline_item.section] = text
                 yield json.dumps(
@@ -126,7 +136,11 @@ class PipelineService:
                 }
             )
             # 4. Armonizza - Use HarmonizationService
+            start_harmonize_time = time.perf_counter()
             harmonized_sections_dict = await self.harmonization_service.harmonize(request_id, sections, reference_style_text)
+            logger.info(
+                f"[{request_id}] Pipeline substep 'harmonize' (LLM) took {time.perf_counter() - start_harmonize_time:.2f}s"
+            )
             yield json.dumps(
                 {
                     "type": "status",

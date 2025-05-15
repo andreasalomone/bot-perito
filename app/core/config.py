@@ -101,7 +101,7 @@ class Settings(BaseSettings):
         "extra": "ignore",  # Ignore extra fields
     }
 
-    @field_validator("cors_allowed_origins", mode="before")
+    @field_validator("cors_allowed_origins", mode="before")  # type: ignore
     @classmethod
     def assemble_cors_origins(cls, v: str | list[str] | None) -> list[str]:
         """Assembles the list of CORS allowed origins.

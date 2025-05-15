@@ -2,13 +2,13 @@
 
 **AI-powered report generator for technical appraisals**
 
-Report-AI enables you to upload documents (PDF, DOCX, images) and generate a complete appraisal report in Word (.docx) format using a multi-step LLM pipeline and customizable template.
+Report-AI enables you to upload documents (PDF, DOCX, Excel, images) and generate a complete appraisal report in Word (.docx) format using a multi-step LLM pipeline and customizable template.
 
 ---
 
 ## Features
 
-- Extract text from PDF, DOCX, and images (OCR)
+- Extract text from PDF, DOCX, Excel (.xlsx, .xls), and images (OCR)
 - Multi-step LLM pipeline: outline → expand sections → harmonize
 - Inject generated content into a DOCX template
 - FastAPI backend with robust error handling and logging
@@ -127,7 +127,7 @@ vercel --prod
 - `X-API-Key`: Your `API_KEY` value
 
 **Form Data**:
-- `files`: One or more document files (`.pdf`, `.docx`, `.doc`, images)
+- `files`: One or more document files (`.pdf`, `.docx`, `.doc`, `.xlsx`, `.xls`, images)
 - `notes`: (Optional) Additional notes for the report
 
 **Response**:

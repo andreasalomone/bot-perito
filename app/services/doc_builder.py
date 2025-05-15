@@ -5,6 +5,8 @@ import io
 import logging
 import re
 from typing import Any
+from typing import Protocol
+from typing import cast
 from uuid import uuid4
 
 from docx import Document
@@ -20,6 +22,18 @@ logger = logging.getLogger(__name__)
 
 class DocBuilderError(Exception):
     """Base exception for document building errors"""
+
+
+# Define a Protocol for paragraph objects with clear method
+class ParagraphProtocol(Protocol):
+    """Protocol defining the interface for paragraph objects."""
+
+    def clear(self) -> None: ...
+    def add_run(self, text: str) -> Any: ...
+    @property
+    def text(self) -> str: ...
+    @property
+    def style(self) -> Any: ...
 
 
 BOLD_RE = re.compile(r"\\*\\*(.+?)\\*\\*")
@@ -63,7 +77,7 @@ SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING: dict[str, str] = {
 }
 
 
-def _add_markdown(par: Any, txt: str) -> None:  # Added type hint for txt and return type
+def _add_markdown(par: ParagraphProtocol, txt: str) -> None:
     """Add markdown-style formatting to a paragraph."""
     # Ensure txt is a string before processing, handles None or other types gracefully
     processed_txt = str(txt) if txt is not None else ""
@@ -114,13 +128,14 @@ async def inject(template_path: str, context: ReportContext) -> bytes:
                 placeholder: getattr(report_context, ctx_key, "")
                 for placeholder, ctx_key in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items()
             }
-            for p in doc.paragraphs:
+            for p_raw in doc.paragraphs:
+                p = cast(ParagraphProtocol, p_raw)  # Cast to our Protocol type
                 current_text = p.text
                 for tag, _content_key_in_map in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items():
                     if tag in current_text:
                         content_string = section_content_map.get(tag, "")
                         style = p.style
-                        p.clear()
+                        p.clear()  # p is now properly typed
                         paragraphs_to_insert = [
                             t.strip()
                             for t in (str(content_string) if content_string is not None else "").split("\n\n")
@@ -130,7 +145,8 @@ async def inject(template_path: str, context: ReportContext) -> bytes:
                             p.add_run("")
                         else:
                             for idx, para_text in enumerate(paragraphs_to_insert):
-                                target_par = p if idx == 0 else doc.add_paragraph(style=style)
+                                # Cast the new paragraph to our Protocol type
+                                target_par = p if idx == 0 else cast(ParagraphProtocol, doc.add_paragraph(style=style))
                                 if idx > 0:
                                     target_par.clear()
                                 _add_markdown(target_par, para_text)

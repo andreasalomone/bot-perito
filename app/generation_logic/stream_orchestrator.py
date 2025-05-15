@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
@@ -149,17 +150,22 @@ async def _stream_report_generation_logic(
     original_notes = notes
     section_map_from_pipeline: dict[str, Any] | None = None
     _final_event_sent = False
+    start_total_time = time.perf_counter()  # Start total timer
 
     try:
         template_path_str = str(settings.template_path)
 
         # 0. Load styles early (for consistency)
+        start_step_time = time.perf_counter()
         reference_style_text = await _helper_load_styles()
+        logger.info(f"[{request_id}] Step 'load_styles' took {time.perf_counter() - start_step_time:.2f}s")
         yield _create_stream_event("status", message="Stylistic references loaded.")
 
         # 1. Validate & extract content
         yield _create_stream_event("status", message="Validating inputs and extracting content…")
+        start_step_time = time.perf_counter()
         corpus = await _helper_validate_and_extract(files, request_id)
+        logger.info(f"[{request_id}] Step 'validate_and_extract' took {time.perf_counter() - start_step_time:.2f}s")
         yield _create_stream_event(
             "status",
             message=f"Content extracted: {len(corpus)} chars.",
@@ -167,11 +173,14 @@ async def _stream_report_generation_logic(
 
         # 2. Template excerpt
         yield _create_stream_event("status", message="Loading template excerpt…")
+        start_step_time = time.perf_counter()
         template_excerpt = await _helper_load_template_excerpt(template_path_str, request_id)
+        logger.info(f"[{request_id}] Step 'load_template_excerpt' took {time.perf_counter() - start_step_time:.2f}s")
         yield _create_stream_event("status", message="Template excerpt loaded.")
 
         # 3. Base context via LLM
         yield _create_stream_event("status", message="Extracting base document context (LLM)…")
+        start_step_time = time.perf_counter()
         base_ctx = await _helper_extract_base_context(
             template_excerpt,
             corpus,
@@ -179,6 +188,7 @@ async def _stream_report_generation_logic(
             request_id,
             reference_style_text,
         )
+        logger.info(f"[{request_id}] Step 'extract_base_context' (LLM) took {time.perf_counter() - start_step_time:.2f}s")
         yield _create_stream_event("status", message="Base document context extracted.")
 
         # 4. Clarification step
@@ -206,6 +216,7 @@ async def _stream_report_generation_logic(
 
         # 5. Streaming pipeline
         section_map_from_pipeline = None
+        start_pipeline_time = time.perf_counter()
         async for pipeline_update_json_str in _helper_run_pipeline(
             request_id,
             template_excerpt,
@@ -248,6 +259,7 @@ async def _stream_report_generation_logic(
                     "status",
                     message="Processing report sections (received non-JSON update)…",
                 )
+        logger.info(f"[{request_id}] Step 'full_pipeline_run' took {time.perf_counter() - start_pipeline_time:.2f}s")
 
         # 6. Final merge
         if section_map_from_pipeline is None:
@@ -319,4 +331,5 @@ async def _stream_report_generation_logic(
                 event_type="error",
                 message="The report generation process terminated unexpectedly on the server. Please try again.",
             )
+        logger.info(f"[{request_id}] Total stream_report_generation_logic took {time.perf_counter() - start_total_time:.2f}s")
         logger.info(f"[{request_id}] Stream generation logic finished.")
