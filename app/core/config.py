@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings
 # Default list of CORS allowed origins
 DEFAULT_CORS_ORIGINS = [
     "https://aiperito.vercel.app",
+    "https://aiperito.onrender.com",
     "http://localhost:3000",
     "http://localhost:8000",
     "https://localhost:3000",
