@@ -202,6 +202,9 @@ async def generate_with_clarifications(
     # The previous comment and dict conversion were outdated.
     final_ctx_model: ReportContext = await build_report_with_clarifications(payload, request_id=request_id)
 
+    # Log the entire context model for debugging
+    logger.info("[%s] FINAL CONTEXT BEING SENT TO DOC_BUILDER:\n%s", request_id, final_ctx_model.model_dump_json(indent=2, exclude_none=True))
+
     # Generate DOCX directly from the final context model
     template_path_str = str(settings.template_path)
     docx_response = await _generate_and_stream_docx(
@@ -247,6 +250,9 @@ async def finalize_report(
     template_path_str = str(settings.template_path)
     # No longer need to dump to dict, pass the ReportContext model directly
     # final_context_dict = final_ctx_payload.model_dump(exclude_none=True)
+
+    # Log the entire context model for debugging
+    logger.info("[%s] FINAL CONTEXT BEING SENT TO DOC_BUILDER:\n%s", request_id, final_ctx_payload.model_dump_json(indent=2, exclude_none=True))
 
     logger.info("[%s] Generating DOCX from final context...", request_id)
     docx_response = await _generate_and_stream_docx(
