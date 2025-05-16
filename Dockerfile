@@ -14,7 +14,7 @@ COPY requirements.txt .
 # Installa le dipendenze
 # --no-cache-dir riduce la dimensione dell'immagine
 # Potresti aver bisogno di dipendenze di sistema per python-magic (libmagic1 su Debian)
-RUN apt-get update && apt-get install -y libmagic1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libmagic1 tesseract-ocr tesseract-ocr-ita && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia il resto del codice dell'applicazione nella directory /app

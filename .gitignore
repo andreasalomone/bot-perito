@@ -87,3 +87,7 @@ mypy.ini
 ruff.toml
 pytest.ini
 pyproject.toml
+test_ocr.py
+
+# Legacy files
+doc_builder_legacy.py

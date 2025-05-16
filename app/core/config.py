@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     api_key: str | None = Field(default=None)
 
-    ocr_language: str = Field(default="ita")
+    ocr_language: str = Field(default="ita+eng")
     image_thumbnail_width: int = Field(default=512)
     image_thumbnail_height: int = Field(default=512)
     image_jpeg_quality: int = Field(default=70)
