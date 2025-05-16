@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 async def startup_event() -> None:
     logger.debug("DEBUG: Application startup - debug message")
     logger.info("INFO: Application startup - Application started successfully")
-    logger.warning("WARNING: Application startup - warning test message")
-    logger.error("ERROR: Application startup - error test message")
 
 
 # Add test endpoint for logging
@@ -38,8 +36,6 @@ async def startup_event() -> None:
 async def test_logging() -> dict[str, str]:
     logger.debug("DEBUG: Test endpoint - debug message")
     logger.info("INFO: Test endpoint - info message")
-    logger.warning("WARNING: Test endpoint - warning message")
-    logger.error("ERROR: Test endpoint - error message")
     return {"status": "Logs generated, check server console"}
 
 
