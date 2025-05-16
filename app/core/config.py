@@ -19,6 +19,7 @@ DEFAULT_CORS_ORIGINS = [
     "http://localhost:8000",
     "https://localhost:3000",
     "https://localhost:8000",
+    "http://0.0.0.0:8000",  # Add this for local development with 0.0.0.0 host
 ]
 
 

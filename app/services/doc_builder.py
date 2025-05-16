@@ -109,11 +109,11 @@ async def inject(template_path: str, context: ReportContext) -> bytes:
             }
             allegati_content = getattr(report_context, "allegati", [])
             if isinstance(allegati_content, list):
-                mapping_data["ALLEGATI"] = "\n".join(str(item) for item in allegati_content if item is not None)
+                mapping_data["ALLEGATI"] = allegati_content
             elif allegati_content is not None:
-                mapping_data["ALLEGATI"] = str(allegati_content)
+                mapping_data["ALLEGATI"] = [str(allegati_content)]
             else:
-                mapping_data["ALLEGATI"] = ""
+                mapping_data["ALLEGATI"] = []
             for _tag, _key in SECTION_PLACEHOLDER_TO_CONTEXT_KEY_MAPPING.items():
                 mapping_data[_tag.removeprefix("{{").removesuffix("}}")] = _tag
             tpl.render(mapping_data)
