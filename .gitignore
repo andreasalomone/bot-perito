@@ -90,4 +90,5 @@ pyproject.toml
 test_ocr.py
 
 # Legacy files
-doc_builder_legacy.py
+frontend/doc_builder_legacy.py
+frontend/script_legacy.js

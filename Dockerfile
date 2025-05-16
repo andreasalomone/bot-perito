@@ -11,10 +11,21 @@ WORKDIR /app
 # Copia prima il file delle dipendenze per sfruttare il caching di Docker
 COPY requirements.txt .
 
+# Installa le dipendenze di sistema
+# libmagic1: per python-magic (rilevamento tipo file)
+# tesseract-ocr, tesseract-ocr-ita, tesseract-ocr-eng: per OCR
+# poppler-utils: per pdf2image (conversione PDF a immagini per OCR)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libmagic1 \
+        tesseract-ocr \
+        tesseract-ocr-ita \
+        tesseract-ocr-eng \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Installa le dipendenze
 # --no-cache-dir riduce la dimensione dell'immagine
-# Potresti aver bisogno di dipendenze di sistema per python-magic (libmagic1 su Debian)
-RUN apt-get update && apt-get install -y libmagic1 tesseract-ocr tesseract-ocr-ita tesseract-ocr-eng && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia il resto del codice dell'applicazione nella directory /app

@@ -37,119 +37,146 @@ import {
     PRESIGN_ENDPOINT
 } from './config.js';
 
-// File size limits matching backend configuration
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB per file
-const MAX_TOTAL_SIZE = 100 * 1024 * 1024; // 100MB total upload
+// -----------------------------------------------------------------------------
+//  Config – keep in sync with backend limits
+// -----------------------------------------------------------------------------
+const MAX_FILE_SIZE  = 25 * 1024 * 1024;   // 25 MB per file
+const MAX_TOTAL_SIZE = 100 * 1024 * 1024;  // 100 MB total
 
-// --- Event Listeners ---
-
+// -----------------------------------------------------------------------------
+//  File-input helper
+// -----------------------------------------------------------------------------
 fileInput.addEventListener('change', validateFiles);
 
+// -----------------------------------------------------------------------------
+//  Presign URL helper
+// -----------------------------------------------------------------------------
 async function getPresignedUrl(filename, contentType, apiKey) {
-    const presignApiUrl = getApiUrl(PRESIGN_ENDPOINT) + `?filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType)}`;
-    updateStatus(`Richiesta URL di upload per ${filename}...`);
-    const response = await fetch(presignApiUrl, {
+    const presignApiUrl =
+        getApiUrl(PRESIGN_ENDPOINT) +
+        `?filename=${encodeURIComponent(filename)}` +
+        `&content_type=${encodeURIComponent(contentType)}`;
+
+    updateStatus(`Richiesta URL di upload per ${filename}…`);
+
+    const res = await fetch(presignApiUrl, {
         method: 'POST',
-        headers: {
-            'X-API-Key': apiKey,
-        }
+        headers: { 'X-API-Key': apiKey }
     });
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: `Errore ${response.status} ottenendo presigned URL per ${filename}` }));
-        throw new Error(errorData.detail || `Errore HTTP ${response.status} per presigned URL`);
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({
+            detail: `Errore ${res.status} ottenendo presigned URL per ${filename}`
+        }));
+        throw new Error(err.detail || `HTTP ${res.status} presign URL`);
     }
-    return response.json(); // Aspettati { key: "...", url: "..." }
+
+    return res.json();   // { key: "...", url: "..." }
 }
 
+// -----------------------------------------------------------------------------
+//  S3 upload helper  (NEW, robust CORS / error handling)
+// -----------------------------------------------------------------------------
 async function uploadToS3(presignedUrl, file) {
-    updateStatus(`Caricamento ${file.name} su S3...`);
-    const response = await fetch(presignedUrl, {
+    updateStatus(`Caricamento ${file.name} su S3…`);
+
+    const res = await fetch(presignedUrl, {
         method: 'PUT',
-        headers: {
-            'Content-Type': file.type, // Questo DEVE corrispondere al content_type usato per generare l'URL
-        },
+        mode:   'cors',                               // explicit for clarity
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
         body: file,
     });
-    if (!response.ok) {
-        // S3 potrebbe ritornare XML per errori, quindi non tentare JSON.parse
-        const errorText = await response.text();
-        console.error("S3 Upload Error Response Text:", errorText);
-        throw new Error(`Errore ${response.status} durante l'upload di ${file.name} su S3.`);
+
+    /*  If the bucket’s CORS rule doesn’t include the page’s origin, the
+        response is "opaque": res.type === 'opaque', res.status === 0,
+        res.ok === false.  We treat that as an error so devs notice. */
+    if (!res.ok) {
+        let detail = '';
+        if (res.type !== 'opaque') {
+            detail = await res.text().catch(() => '');
+            console.error('S3 error body:', detail);
+        }
+        throw new Error(
+            res.type === 'opaque'
+                ? `Upload bloccato dalle CORS per ${file.name}`
+                : `Errore ${res.status} durante l'upload di ${file.name}`
+        );
     }
+
     updateStatus(`${file.name} caricato con successo!`);
 }
 
+// -----------------------------------------------------------------------------
+//  Form submit
+// -----------------------------------------------------------------------------
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!validateFiles()) return; // Re-validate before submit
+    if (!validateFiles()) return;          // re-validate before submit
 
     disableSubmitButton();
     showSpinner();
-    updateStatus('Inizializzazione upload S3...');
+    updateStatus('Inizializzazione upload S3…');
     hideClarificationUI();
 
-    const files = Array.from(fileInput.files);
-    const notes = form.querySelector('#notes_input').value;
-    const apiKey = apiKeyInput.value;
+    const files   = Array.from(fileInput.files);
+    const notes   = form.querySelector('#notes_input').value;
+    const apiKey  = apiKeyInput.value;
 
     if (!apiKey) {
-        showGeneralError("API Key è richiesta.");
+        showGeneralError('API Key è richiesta.');
         enableSubmitButton();
         hideSpinner();
         return;
     }
 
     try {
-        // 1. Parallelizza l'ottenimento di URL presigned e l'upload a S3
-        updateStatus(`Preparazione upload di ${files.length} file su S3...`);
+        // -------------------------------------------------------------
+        // 1. Upload all files in parallel
+        // -------------------------------------------------------------
+        updateStatus(`Preparazione upload di ${files.length} file su S3…`);
 
-        // Realizziamo gli upload in parallelo per migliorare le prestazioni
         const uploadPromises = files.map(async (file) => {
             try {
-                // Ogni file otterrà il proprio URL presigned e poi verrà caricato
-                const presignData = await getPresignedUrl(file.name, file.type, apiKey);
-                await uploadToS3(presignData.url, file);
-                return presignData.key; // Restituisci la chiave S3 per i file caricati con successo
-            } catch (error) {
-                console.error(`Errore caricando ${file.name}:`, error);
-                throw new Error(`Fallimento caricando ${file.name}: ${error.message}`);
+                const { url, key } = await getPresignedUrl(file.name, file.type, apiKey);
+                await uploadToS3(url, file);
+                return key;                              // success → S3 key
+            } catch (err) {
+                console.error(`Errore caricando ${file.name}:`, err);
+                throw new Error(`Fallimento caricando ${file.name}: ${err.message}`);
             }
         });
 
-        // Attendi che tutti gli upload siano completati
         const s3Keys = await Promise.all(uploadPromises);
 
-        updateStatus(`${files.length} file caricati su S3. Avvio generazione report...`);
+        updateStatus(`${files.length} file caricati su S3. Avvio generazione report…`);
 
-        // 2. Chiama /api/generate con le chiavi S3
-        const generatePayload = {
-            s3_keys: s3Keys,
-            notes: notes,
-        };
+        // -------------------------------------------------------------
+        // 2. Call /api/generate
+        // -------------------------------------------------------------
+        const payload = { s3_keys: s3Keys, notes };
+        console.log('Payload being sent to /api/generate:', payload);
 
-        console.log("Payload being sent to /api/generate:", generatePayload);
-
-        const generateApiUrl = getApiUrl(GENERATE_ENDPOINT);
-        const generateResponse = await fetch(generateApiUrl, {
-            method: 'POST',
+        const generateRes = await fetch(getApiUrl(GENERATE_ENDPOINT), {
+            method:  'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': apiKey,
+                'X-API-Key': apiKey
             },
-            body: JSON.stringify(generatePayload),
+            body: JSON.stringify(payload)
         });
 
-        if (!generateResponse.ok) {
-             const errorData = await generateResponse.json().catch(() => ({ detail: `Errore ${generateResponse.status} chiamando /generate` }));
-             throw new HandledApiError(errorData.detail || `Errore HTTP ${generateResponse.status} per /generate`);
+        if (!generateRes.ok) {
+            const err = await generateRes.json().catch(() => ({
+                detail: `Errore ${generateRes.status} chiamando /generate`
+            }));
+            throw new HandledApiError(err.detail || `HTTP ${generateRes.status} /generate`);
         }
 
-        // Processa la stream response come prima
-        await processStreamResponse(generateResponse, handleSubmitClarifications);
+        await processStreamResponse(generateRes, handleSubmitClarifications);
 
     } catch (err) {
         if (!(err instanceof HandledApiError)) {
-            showGeneralError(err.message || 'Errore durante il processo di upload o generazione.');
+            showGeneralError(err.message || 'Errore durante upload o generazione.');
         }
         console.error('Errore generale nel submit del form:', err);
         if (!clarificationUIElement.style.display || clarificationUIElement.style.display === 'none') {
@@ -159,31 +186,29 @@ form.addEventListener('submit', async (e) => {
     }
 });
 
-// handleSubmitClarifications rimane quasi uguale, ma deve usare getApiUrl()
+// -----------------------------------------------------------------------------
+//  Clarification submit
+// -----------------------------------------------------------------------------
 async function handleSubmitClarifications(event) {
-    const submitClarificationsButton = event.target;
+    const btn = event.target;
 
-    disableSubmitButton(); // Disable main button
+    disableSubmitButton();
     showSpinner();
-    updateStatus('Invio chiarimenti...');
+    updateStatus('Invio chiarimenti…');
 
     try {
-        const missingFields = JSON.parse(submitClarificationsButton.dataset.missingFields || '[]');
-        const requestArtifacts = getActiveRequestArtifacts();
-        const userClarifications = getClarificationInputs(missingFields);
+        const missing   = JSON.parse(btn.dataset.missingFields || '[]');
+        const artifacts = getActiveRequestArtifacts();
+        const answers   = getClarificationInputs(missing);
 
-        if (!requestArtifacts) {
-            throw new Error("Artefatti della richiesta non trovati. Impossibile procedere con i chiarimenti.");
+        if (!artifacts) {
+            throw new Error('Artefatti della richiesta non trovati.');
         }
 
-        const payload = {
-            clarifications: userClarifications,
-            request_artifacts: requestArtifacts
-        };
+        const payload = { clarifications: answers, request_artifacts: artifacts };
 
-        const clarifyApiUrl = getApiUrl(CLARIFY_ENDPOINT);
-        const response = await fetch(clarifyApiUrl, {
-            method: 'POST',
+        const res = await fetch(getApiUrl(CLARIFY_ENDPOINT), {
+            method:  'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-API-Key': apiKeyInput.value
@@ -191,24 +216,22 @@ async function handleSubmitClarifications(event) {
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: `Errore ${response.status} chiamando /generate-with-clarifications` }));
-            throw new HandledApiError(errorData.detail || `Errore HTTP ${response.status} per /generate-with-clarifications`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({
+                detail: `Errore ${res.status} chiamando /generate-with-clarifications`
+            }));
+            throw new HandledApiError(err.detail || `HTTP ${res.status} /generate-with-clarifications`);
         }
 
-        // /generate-with-clarifications ritorna direttamente il DOCX, quindi dobbiamo scaricare il file direttamente
-        const blob = await response.blob();
-        const filenameHeader = response.headers.get('content-disposition');
-        let filename = 'report_chiarito.docx'; // Default
-        if (filenameHeader) {
-            const parts = filenameHeader.split('filename=');
-            if (parts.length > 1) {
-                filename = parts[1].split(';')[0].replace(/["']/g, '');
-            }
+        const blob      = await res.blob();
+        const cdHeader  = res.headers.get('content-disposition');
+        let   filename  = 'report_chiarito.docx';
+        if (cdHeader) {
+            const parts = cdHeader.split('filename=');
+            if (parts.length > 1) filename = parts[1].split(';')[0].replace(/["']/g, '');
         }
         triggerDownload(blob, filename);
 
-        // Dopo il download:
         hideClarificationUI();
         enableSubmitButton();
         hideSpinner();
@@ -224,5 +247,7 @@ async function handleSubmitClarifications(event) {
     }
 }
 
-// Initial state setup
-disableSubmitButton(); // Disable button initially until files are selected/validated
+// -----------------------------------------------------------------------------
+//  Initial UI state
+// -----------------------------------------------------------------------------
+disableSubmitButton();
