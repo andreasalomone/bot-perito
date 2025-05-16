@@ -207,6 +207,7 @@ async def generate_with_clarifications(
 
     # Generate DOCX directly from the final context model
     template_path_str = str(settings.template_path)
+    print(f"[DEBUG] FINAL CONTEXT: {final_ctx_model.model_dump_json(indent=2, exclude_none=True)}")
     docx_response = await _generate_and_stream_docx(
         template_path=template_path_str,
         final_context=final_ctx_model,  # Pass the ReportContext model instance
