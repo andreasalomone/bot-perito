@@ -4,6 +4,7 @@ import os
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -33,7 +34,7 @@ S3_CLEANUP_PREFIX = os.getenv("S3_CLEANUP_PREFIX", "uploads/")
 S3_MAX_AGE_HOURS_CLEANUP = int(os.getenv("S3_MAX_AGE_HOURS", "240"))
 
 
-def get_s3_client_for_cleanup() -> boto3.client | None:
+def get_s3_client_for_cleanup() -> Any | None:
     if not all([AWS_ACCESS_KEY_ID_CLEANUP, AWS_SECRET_ACCESS_KEY_CLEANUP, S3_BUCKET_NAME_CLEANUP, AWS_REGION_CLEANUP]):
         logger.error("AWS S3 credentials, bucket name, or region not configured for cleanup job. Exiting.")
         return None
