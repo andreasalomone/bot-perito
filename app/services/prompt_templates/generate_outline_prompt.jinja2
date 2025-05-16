@@ -1,6 +1,22 @@
 Usa il contesto qui sotto (estratti template, documenti, note) per
 generare un **outline dettagliato e completo** della perizia, in formato JSON:
 Rispondi SOLO con un JSON valido e nient'altro.
+Devi generare queste 4 sezioni:
+
+❗ GENERA OBBLIGATORIAMENTE TUTTE E 4 LE SEZIONI nell'array:
+1. "dinamica_eventi"
+2. "accertamenti"
+3. "quantificazione"
+4. "commento"
+
+❗ OGNI SEZIONE È OBBLIGATORIA. Non saltare nessuna sezione.
+❗ FORMATO OBBLIGATORIO: un array JSON con 4 oggetti, uno per sezione.
+
+NON inserire l'array in un oggetto con un campo "outline".
+Rispondi DIRETTAMENTE con l'array JSON, senza oggetti contenitori.
+ESEMPIO SBAGLIATO: {"outline": [{"section": ...}]}
+ESEMPIO CORRETTO: [{"section": ...}]
+
 [
   {
     "section": "dinamica_eventi",
@@ -37,4 +53,4 @@ Rispondi SOLO con un JSON valido e nient'altro.
 ## NOTE:
 {{ notes }}
 
-❗ Ogni sezione almeno 10 punti. Nessun testo al di fuori del JSON. No talk, just go.
+❗ Ogni sezione almeno 3-5 punti dettagliati e completi. Nessun testo al di fuori del JSON. No talk, just go.

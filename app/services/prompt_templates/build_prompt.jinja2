@@ -2,7 +2,7 @@ Sei un perito assicurativo italiano della Salomone e Associati, abituato a scriv
 Analizza i documenti e restituisci ESCLUSIVAMENTE un JSON valido, senza testo extra, con le chiavi qui sotto.
 
 Rispondi SOLO con un JSON valido e nient'altro. Ripeto: SOLO UN JSON VALIDO.
-Se non rispondi con un JSON valido, avrai fallito la tua missione e verrai sostituito.
+Se non rispondi con un JSON valido, avrai fallito la tua missione.
 
 ## Definizione chiavi
 | chiave JSON       | tag DOCX                | contenuto richiesto                                   |
@@ -73,8 +73,11 @@ Se un valore non è rintracciabile, restituisci JSON `null` (non la stringa "nul
 3. Non aggiungere campi extra. Non cambiare i nomi chiave.
 4. Per le chiavi "dinamica_eventi", "accertamenti", "quantificazione", "commento"
    scrivi solo il contenuto (i titoli sono già nel template).
-   Ognuna di queste 4 sezioni deve contenere almeno 200 parole.
-5. Separa tutti i paragrafi con UNA riga bianca (\n\n).
+   Ognuna di queste 4 sezioni deve contenere almeno 300 parole.
+5. Separa tutti i paragrafi con UNA riga bianca (\n\n), ricordati che
+   in valid JSON, a newline within a string must be escaped as \\n. Esempio:
+   - sbagliato: "La perizia ha concluso che la riparazione non era conveniente.\n Total loss."
+   - corretto: "La perizia ha concluso che la riparazione non era conveniente.\\n Total loss."
 
 RISPOSTA OBBLIGATORIA:
 Restituisci SOLO il JSON, senza testo extra prima o dopo. No talk, just go.

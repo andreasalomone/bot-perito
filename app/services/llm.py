@@ -62,6 +62,7 @@ client = AsyncOpenAI(
         # Authorization is auto‑added from api_key
     },
     timeout=timeout_config,  # Pass the timeout config
+    max_retries=2,  # Add max retries directly to the client config
 )
 
 
@@ -108,8 +109,40 @@ async def call_llm(prompt: str) -> str:
             messages=[
                 {"role": "user", "content": prompt},
             ],
+            response_format={"type": "json_object"},
+            temperature=0.2,  # Lower temperature for more reliable responses
+            timeout=timeout_config,  # Use our timeout config
         )
-        content = (rsp.choices[0].message.content or "").strip()
+
+        # Log the raw response structure for debugging
+        logger.debug("[%s] Raw LLM response structure: %s", request_id, str(rsp))
+
+        # Add null checks for response structure
+        if not rsp or not hasattr(rsp, "choices") or not rsp.choices:
+            logger.error("[%s] Invalid response structure from LLM API: %s", request_id, str(rsp))
+            raise LLMError(f"Invalid response structure from LLM API: {str(rsp)}")
+
+        # Check if message and content exist in the first choice
+        first_choice = rsp.choices[0]
+        if not hasattr(first_choice, "message") or first_choice.message is None:
+            logger.error("[%s] Missing 'message' in LLM API response: %s", request_id, str(first_choice))
+            raise LLMError(f"Missing 'message' in LLM API response: {str(first_choice)}")
+
+        # Handle potential structured content (e.g., OpenRouter's JSON response mode)
+        if hasattr(first_choice.message, "content") and first_choice.message.content is not None:
+            content = first_choice.message.content.strip()
+        elif hasattr(first_choice.message, "function_call") and first_choice.message.function_call is not None:
+            # Handle possible function call response (for JSON mode)
+            fcall = first_choice.message.function_call
+            if hasattr(fcall, "arguments") and fcall.arguments:
+                content = fcall.arguments
+            else:
+                logger.error("[%s] Function call response missing arguments: %s", request_id, str(fcall))
+                raise LLMError(f"Function call response missing arguments: {str(fcall)}")
+        else:
+            logger.error("[%s] No content or function_call in message: %s", request_id, str(first_choice.message))
+            raise LLMError(f"No content or function_call in message: {str(first_choice.message)}")
+
         logger.debug("[%s] LLM response received, length: %d chars", request_id, len(content))
         return content
     except OpenAIError as e:
@@ -129,6 +162,11 @@ def extract_json(text: str) -> dict:
     """Attempts to robustly extract and parse JSON from LLM responses, handling markdown fences and extraneous text."""
     request_id = str(uuid4())
     logger.debug("[%s] Attempting to parse JSON response, length: %d", request_id, len(text))
+
+    # If text is already a valid dictionary, return it directly
+    if isinstance(text, dict):
+        logger.info("[%s] Input is already a dictionary, no parsing needed.", request_id)
+        return text
 
     try:
         return json.loads(text)
