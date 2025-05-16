@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
@@ -266,3 +267,13 @@ async def finalize_report(
         request_id,
     )
     return docx_response
+
+
+@router.post("/debug-context", dependencies=[Depends(verify_api_key)])
+async def debug_context(context_data: ReportContext) -> JSONResponse:
+    """Debug endpoint to inspect the structure of a ReportContext model.
+
+    This helps diagnose issues with the context data structure without relying on logging.
+    """
+    # Return the context as JSON to directly view in the browser/client
+    return JSONResponse(content=context_data.model_dump(exclude_none=True), status_code=200)
