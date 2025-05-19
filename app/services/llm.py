@@ -110,7 +110,7 @@ async def call_llm(prompt: str) -> str:
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            max_tokens=6000,
+            max_tokens=3000,
             temperature=0.2,  # Lower temperature for more reliable responses
             timeout=timeout_config,  # Use our timeout config
         )
