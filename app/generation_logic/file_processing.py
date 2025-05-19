@@ -267,11 +267,14 @@ async def _validate_and_extract_files(
     if all(isinstance(f, str) for f in files_input):
         logger.info(f"[{request_id}] Processing S3 keys: {files_input}")
         s3_keys: list[str] = cast(list[str], files_input)
-        download_tasks = [_download_and_validate_s3_file(key, request_id) for key in s3_keys]
 
-        # Gather può sollevare eccezioni se una task fallisce e non ha return_exceptions=True
+        # Process S3 keys sequentially instead of in parallel
         try:
-            results = await asyncio.gather(*download_tasks)  # Se una fallisce, gather fallisce
+            results = []
+            for key in s3_keys:
+                result = await _download_and_validate_s3_file(key, request_id)
+                results.append(result)
+
             for filename, content_bytes in results:
                 processed_file_data.append((filename, content_bytes))
                 total_size += len(content_bytes)
@@ -285,9 +288,14 @@ async def _validate_and_extract_files(
     elif all(isinstance(f, UploadFile) for f in files_input):
         logger.info(f"[{request_id}] Processing UploadFile objects.")
         upload_files: list[UploadFile] = cast(list[UploadFile], files_input)
-        validation_tasks = [_validate_single_uploaded_file(f_obj, request_id) for f_obj in upload_files]
+
+        # Process upload files sequentially instead of in parallel
         try:
-            results = await asyncio.gather(*validation_tasks)
+            results = []
+            for f_obj in upload_files:
+                result = await _validate_single_uploaded_file(f_obj, request_id)
+                results.append(result)
+
             for filename, content_bytes in results:
                 processed_file_data.append((filename, content_bytes))
                 total_size += len(content_bytes)
@@ -312,11 +320,14 @@ async def _validate_and_extract_files(
         logger.info(f"[{request_id}] No files to extract text from.")
         return ""
 
-    extraction_tasks = [_extract_single_file(fname, request_id, f_content_bytes) for fname, f_content_bytes in processed_file_data]
-    # Using return_exceptions=True means the result can contain exceptions
-    # mypy: asyncio.gather with return_exceptions=True returns a list where each item can be either
-    # the expected result type (str | None) or an exception
-    extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+    # Replace asyncio.gather with sequential processing
+    extraction_results: list[str | None | Exception] = []
+    for filename, content_bytes in processed_file_data:
+        try:
+            extracted_text = await _extract_single_file(filename, request_id, content_bytes)
+            extraction_results.append(extracted_text)
+        except Exception as e:
+            extraction_results.append(e)
 
     for result_item in extraction_results:
         if isinstance(result_item, Exception):
@@ -328,10 +339,8 @@ async def _validate_and_extract_files(
             raise PipelineError(f"Error extracting text from a file: {str(result_item)}") from result_item
 
         # A questo punto, result_item non è un'eccezione, quindi deve essere str | None
-        # Use the cast function to tell mypy that this type is str | None
-        text_content = cast(str | None, result_item)
-        if text_content:
-            extracted_texts.append(text_content)
+        if result_item is not None:  # Explicitly check for None
+            extracted_texts.append(result_item)
 
     corpus = guard_corpus("\\n\\n".join(extracted_texts), request_id)
     logger.info(f"[{request_id}] Text extraction complete. Corpus length: {len(corpus)}.")

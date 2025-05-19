@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration for PDF OCR Fallback ---
 MIN_PDF_TEXT_LENGTH_FOR_DIRECT_EXTRACTION = 50  # Threshold for triggering OCR
-PDF_OCR_DPI = 200  # DPI for converting PDF pages to images for OCR
+PDF_OCR_DPI = 150  # DPI for converting PDF pages to images for OCR
 # ------------------------------------------
 
 
